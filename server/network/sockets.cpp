@@ -65,17 +65,15 @@ int create_tcp_listening_socket(unsigned int port) {
 }
 
 int set_socket_options(int comm_fd) {
-    int sndbuf_len = sizeof(uint32_t) * KOHERON_SIG_LEN;
+    int buf_len = 8 * 1024 * 1024; // 4 MiB
 
-    if (::setsockopt(comm_fd, SOL_SOCKET, SO_SNDBUF, &sndbuf_len, sizeof(sndbuf_len)) < 0) {
+    if (::setsockopt(comm_fd, SOL_SOCKET, SO_SNDBUF, &buf_len, sizeof(buf_len)) < 0) {
         log<CRITICAL>("Cannot set socket send options\n");
         ::close(comm_fd);
         return -1;
     }
 
-    int rcvbuf_len = KOHERON_READ_STR_LEN;
-
-    if (::setsockopt(comm_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf_len, sizeof(rcvbuf_len)) < 0) {
+    if (::setsockopt(comm_fd, SOL_SOCKET, SO_RCVBUF, &buf_len, sizeof(buf_len)) < 0) {
         log<CRITICAL>("Cannot set socket receive options\n");
         ::close(comm_fd);
         return -1;
@@ -86,6 +84,16 @@ int set_socket_options(int comm_fd) {
 
         if (::setsockopt(comm_fd, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&one), sizeof(one)) < 0) {
             log<CRITICAL>("Cannot set TCP_NODELAY\n");
+            ::close(comm_fd);
+            return -1;
+        }
+    }
+
+    if constexpr (config::use_zerocopy) {
+        int one = 1;
+
+        if (::setsockopt(comm_fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one))) {
+            log<CRITICAL>("Cannot set SO_ZEROCOPY\n");
             ::close(comm_fd);
             return -1;
         }
