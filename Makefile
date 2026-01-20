@@ -232,7 +232,7 @@ endif
 
 .PHONY: setup
 setup:
-	sudo apt-get install -y curl rsync python3-venv
+	sudo apt-get install -y curl rsync python3-venv qemu-user-static
 	[ -d $(VENV) ] || python3 -m venv $(VENV)
 	$(VENV)/bin/python3 -m ensurepip --upgrade
 	$(VENV)/bin/python3 -m pip install --upgrade pip
