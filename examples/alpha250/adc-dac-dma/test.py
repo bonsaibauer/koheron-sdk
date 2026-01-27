@@ -42,7 +42,7 @@ class AdcDacDma(object):
     @command()
     def get_adc_data_n(self, N):
         # server sends exactly N*n_pts uint32 words
-        return self.client.recv_vector(dtype='uint32')
+        return self.client.recv_vector(dtype='uint32', check_type=False)
 
     def _resize_for_desc(self, N):
         self.n = 2 * N_PTS * N

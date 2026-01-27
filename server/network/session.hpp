@@ -155,10 +155,8 @@ class Session
             if (n == 0) {
                 status = CLOSED;
             } else {
-                logf<CRITICAL>("send_payload failed: {} (errno={})\n", strerror(errno), errno);
-
                 if (flags & MSG_ZEROCOPY) {
-                    log("Try without MSG_ZEROCOPY\n");
+                    log<DEBUG>("Try without MSG_ZEROCOPY\n");
                     return send_payload(payload, flags & ~MSG_ZEROCOPY);
                 }
             }

@@ -148,16 +148,8 @@ class AdcDacDma
         return data;
     }
 
-    std::vector<uint32_t> get_adc_data_n(uint32_t N) {
-        if (N < 1) N = 1;
-        if (N > n_desc) N = n_desc;
-
-        // Full fixed span (no copy yet)
-        auto full = ram_s2mm.read_span<uint32_t, n_desc * n_pts>();
-
-        // Copy only what we want to send
-        const uint32_t n_words = N * n_pts;
-        return std::vector<uint32_t>(full.begin(), full.begin() + n_words);
+    auto get_adc_data_n(uint32_t N) {
+        return ram_s2mm.read_span<uint32_t>(N * n_pts);
     }
 
   private:
