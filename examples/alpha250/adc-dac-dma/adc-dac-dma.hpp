@@ -97,6 +97,8 @@ class AdcDacDma
                 break;
             }
         }
+        ctl.set_bit<reg::reset, 0>();
+        ctl.clear_bit<reg::reset, 0>();
     }
 
     void select_adc_channel(uint32_t channel) {
