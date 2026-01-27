@@ -75,7 +75,7 @@ if __name__=="__main__":
     adc_channel = 0
     driver.select_adc_channel(adc_channel)
 
-    N = 32*4  # capture length in descriptors
+    N = 1  # capture length in descriptors
 
     fs = 250e6
     fmin = 1e3
@@ -89,13 +89,26 @@ if __name__=="__main__":
     driver.dac = 0.9 * np.cos(2*np.pi * (fmin + chirp * t) * t)
     driver.set_dac(warning=True)
 
-    print("Get ADC{} data ({} points)".format(adc_channel, driver.n))
+    print("Get ADC data ({} points)".format(driver.n))
     driver.get_adc(N)
 
-    n_pts = driver.n
-    print("Plot first {} points".format(n_pts))
-    plt.plot(1e6 * t[0:n_pts], driver.adc[0:n_pts])
-    plt.ylim((-2**15, 2**15))
-    plt.xlabel('Time (us)')
-    plt.ylabel('ADC Raw data')
-    plt.show()
+    n_pts = 500
+
+    plt.ion()
+    figure, ax = plt.subplots(figsize=(10,8))
+    line1, = ax.plot(1e6 * t[0:n_pts], driver.adc[0:n_pts])
+    plt.title("ADC Values")
+    plt.xlabel("Time (us)")
+    plt.ylabel("ADC Value")
+
+    try:
+        while(True):
+            driver.get_adc(N)
+            line1.set_xdata(1e6 * t[0:n_pts])
+            line1.set_ydata(driver.adc[0:n_pts])
+            figure.canvas.draw()
+            figure.canvas.flush_events()
+
+
+    except KeyboardInterrupt:
+        pass

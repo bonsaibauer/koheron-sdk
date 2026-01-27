@@ -149,6 +149,8 @@ class AdcDacDma
     }
 
     auto get_adc_data_n(uint32_t N) {
+        if (N < 1) N = 1;
+        if (N > n_desc) N = n_desc;
         return ram_s2mm.read_span<uint32_t>(N * n_pts);
     }
 
