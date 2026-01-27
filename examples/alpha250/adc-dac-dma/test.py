@@ -57,6 +57,7 @@ class AdcDacDma(object):
         self._resize_for_desc(N)
 
         self.start_dma(N)
+
         data = self.get_adc_data_n(N)
         self.stop_dma()
 
@@ -78,21 +79,22 @@ if __name__=="__main__":
     N = 1  # capture length in descriptors
 
     fs = 250e6
-    fmin = 1e3
-    fmax = 1e6
+    f0 = 1e6          # oscillation frequency
+    sigma = 10e-6    # Gaussian width (s)
 
     driver._resize_for_desc(N)
     t = np.arange(driver.n) / fs
-    chirp = (fmax-fmin)/(t[-1]-t[0])
+    t0 = t[-1] / 4
 
-    print("Set DAC waveform (chirp between {} and {} MHz)".format(1e-6*fmin, 1e-6*fmax))
-    driver.dac = 0.9 * np.cos(2*np.pi * (fmin + chirp * t) * t)
+    env = np.exp(-0.5 * ((t - t0) / sigma)**2)
+
+    driver.dac = 0.9 * env #* np.cos(2*np.pi*f0*t)
     driver.set_dac(warning=True)
 
     print("Get ADC data ({} points)".format(driver.n))
     driver.get_adc(N)
 
-    n_pts = 500
+    n_pts = N*N_PTS
 
     plt.ion()
     figure, ax = plt.subplots(figsize=(10,8))
@@ -101,14 +103,33 @@ if __name__=="__main__":
     plt.xlabel("Time (us)")
     plt.ylabel("ADC Value")
 
-    try:
-        while(True):
-            driver.get_adc(N)
-            line1.set_xdata(1e6 * t[0:n_pts])
-            line1.set_ydata(driver.adc[0:n_pts])
-            figure.canvas.draw()
-            figure.canvas.flush_events()
+    n_acq = 1000          # number of acquisitions
+    centers = []
 
+    for k in range(n_acq):
+        driver.get_adc(N)
 
-    except KeyboardInterrupt:
-        pass
+        y = driver.adc[0:n_pts].astype(np.float64)
+        w = y * y
+        t_us = 1e6 * t[0:n_pts]
+
+        t_center_us = (t_us @ w) / (w.sum() + 1e-30)
+        centers.append(t_center_us)
+
+        print(f"{k:4d}: center ≈ {t_center_us:.3f} µs")
+
+        # optional: live waveform update
+        line1.set_ydata(driver.adc[0:n_pts])
+        figure.canvas.draw()
+        figure.canvas.flush_events()
+
+    plt.ioff()  # turn off interactive so show() blocks
+
+    fig2, ax2 = plt.subplots(figsize=(10,6))
+    ax2.plot(centers, marker='o', linestyle='-')
+    ax2.set_xlabel("Acquisition index")
+    ax2.set_ylabel("Center time (µs)")
+    ax2.set_title("Pulse center vs time")
+    ax2.grid(True)
+
+    plt.show()
