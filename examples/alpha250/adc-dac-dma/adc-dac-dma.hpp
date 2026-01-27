@@ -134,6 +134,8 @@ class AdcDacDma
         dma.write<Dma_regs::mm2s_taildesc>(mem::ocm_mm2s_addr + (N-1) * 0x40);
         dma.write<Dma_regs::s2mm_taildesc>(mem::ocm_s2mm_addr + (N-1) * 0x40);
 
+        mmio_flush();
+
         // Trigger
         ctl.set_bit<reg::trig, 0>();
         ctl.clear_bit<reg::trig, 0>();
@@ -167,6 +169,12 @@ class AdcDacDma
     hw::Memory<mem::sclr>&     sclr;
 
     std::array<uint32_t, n_desc * n_pts> data;
+
+    void mmio_flush() {
+        (void)dma.read<Dma_regs::mm2s_dmasr>();
+        (void)dma.read<Dma_regs::s2mm_dmasr>();
+        asm volatile("dsb sy" ::: "memory");
+    }
 
     void set_descriptors(uint32_t N) {
         // Each descriptor buffer is 4*n_pts bytes (256 KiB).

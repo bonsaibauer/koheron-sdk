@@ -127,7 +127,25 @@ cell xilinx.com:ip:axis_clock_converter:1.1 axis_clock_converter_1 {
   s_axis_aclk ps_0/FCLK_CLK0
   s_axis_aresetn proc_sys_reset_0/peripheral_aresetn
   m_axis_aclk adc_dac/adc_clk
-  m_axis_aresetn rst_adc_clk/peripheral_aresetn
+  m_axis_aresetn acq_reset_pulser/local_aresetn
+}
+
+cell xilinx.com:ip:axis_data_fifo:2.0 axis_data_fifo_1 {
+  FIFO_DEPTH 512
+} {
+  S_AXIS axis_clock_converter_1/M_AXIS
+  s_axis_aclk adc_dac/adc_clk
+  s_axis_aresetn acq_reset_pulser/local_aresetn
+}
+
+
+cell koheron:user:axis_trig_gate:1.0 axis_trig_gate_0 {
+  TDATA_WIDTH 64
+} {
+  aclk adc_dac/adc_clk
+  aresetn acq_reset_pulser/local_aresetn
+  trig [ctl_pin trig]
+  S_AXIS axis_data_fifo_1/M_AXIS
 }
 
 cell xilinx.com:ip:axis_dwidth_converter:1.1 axis_dwidth_converter_1 {
@@ -136,7 +154,7 @@ cell xilinx.com:ip:axis_dwidth_converter:1.1 axis_dwidth_converter_1 {
 } {
   aclk adc_dac/adc_clk
   aresetn rst_adc_clk/peripheral_aresetn
-  S_AXIS axis_clock_converter_1/M_AXIS
+  S_AXIS axis_trig_gate_0/M_AXIS
   m_axis_tvalid axis_dwidth_converter_1/m_axis_tready
 }
 
