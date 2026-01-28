@@ -75,6 +75,42 @@ class AdcDacDma(object):
     def get_adc_data_n(self, N):
         return self.client.recv_vector(dtype="uint32", check_type=False)
 
+    @command()
+    def bode_reset(self, n_fft, fs):
+        pass
+
+    @command()
+    def bode_set_baseline(self, h_real, h_imag, mask):
+        pass
+
+    @command()
+    def bode_clear_baseline(self):
+        pass
+
+    @command()
+    def bode_acquire_step(self, N, thr_rel, remove_delay, band_lo, band_hi, apply_baseline):
+        pass
+
+    @command()
+    def bode_get_h_real(self):
+        return self.client.recv_vector(dtype="float64")
+
+    @command()
+    def bode_get_h_imag(self):
+        return self.client.recv_vector(dtype="float64")
+
+    @command()
+    def bode_get_mask(self):
+        return self.client.recv_vector(dtype="uint8")
+
+    @command()
+    def bode_get_tau(self):
+        return self.client.recv_double()
+
+    @command()
+    def bode_get_count(self):
+        return self.client.recv_uint32()
+
     def ensure_alloc(self, N):
         """Allocate buffers only if N changes."""
         N = int(N)
@@ -105,21 +141,6 @@ class AdcDacDma(object):
         self.adc[::2] = lo.view(np.int16).astype(np.float64)
         self.adc[1::2] = hi.view(np.int16).astype(np.float64)
 
-
-def estimate_delay_and_remove(H, f, fs, band_lo=1e6, band_hi=5e7, mask=None):
-    ph = np.unwrap(np.angle(H))
-    band = (f >= band_lo) & (f <= band_hi)
-    if mask is not None:
-        band &= mask
-    if np.count_nonzero(band) < 10:
-        return H, 0.0
-
-    a, _b = np.polyfit(f[band], ph[band], 1)
-    tau = -a / (2.0 * np.pi)
-    H_corr = H * np.exp(1j * 2.0 * np.pi * f * tau)
-    return H_corr, tau
-
-
 def save_baseline(path, f, H, mask, meta=None):
     np.savez(
         path,
@@ -139,15 +160,6 @@ def load_baseline(path):
     mask = d["mask"]
     meta = d["meta"][0] if "meta" in d else None
     return f, H, mask, meta
-
-
-def apply_baseline_correction(H_meas, H0, mask0=None, eps=1e-12):
-    denom = H0
-    if mask0 is not None:
-        denom = np.where(mask0, denom, np.nan + 1j * np.nan)
-    mag = np.abs(denom)
-    denom = np.where(mag > eps, denom, np.nan + 1j * np.nan)
-    return H_meas / denom
 
 
 def make_live_plot(f, k0=1, title="Bode (live)"):
@@ -190,14 +202,20 @@ def live_bode(
     baseline: None or tuple (f0, H0, mask0)
     """
     f = np.fft.rfftfreq(n_fft, d=1.0 / fs)
-    window = np.hanning(n_fft)
 
     fig, ax_mag, ax_phase, mag_line, phase_line = make_live_plot(f, k0=k0, title=title)
 
-    Sxx = np.zeros_like(f, dtype=np.float64)
-    Syx = np.zeros_like(f, dtype=np.complex128)
-
     rng = np.random.default_rng(seed)
+    driver.bode_reset(n_fft, fs)
+    if baseline is not None:
+        f0, H0, mask0 = baseline
+        if f0.shape != f.shape or np.max(np.abs(f0 - f)) != 0.0:
+            raise RuntimeError(
+                "Baseline frequency grid doesn't match. Ensure fs/N/n_fft are identical."
+            )
+        driver.bode_set_baseline(H0.real.astype(np.float64), H0.imag.astype(np.float64), mask0.astype(np.uint8))
+    else:
+        driver.bode_clear_baseline()
 
     # for stable y-lims after first draw
     did_autoscale = False
@@ -210,35 +228,9 @@ def live_bode(
         driver.dac = amp * white
         driver.set_dac(warning=(k == 0))
 
-        # capture
-        driver.capture_adc(N)
-
-        x = driver.dac[:n_fft] * window
-        y = driver.adc[:n_fft] * window
-
-        X = np.fft.rfft(x)
-        Y = np.fft.rfft(y)
-
-        # running average
-        Sxx = (Sxx * k + (np.abs(X) ** 2)) / (k + 1)
-        Syx = (Syx * k + (Y * np.conj(X))) / (k + 1)
-
-        H = Syx / (Sxx + 1e-30)
-        mask = Sxx > (thr_rel * np.max(Sxx))
-
-        tau = 0.0
-        H_used = H
-        if remove_delay:
-            H_used, tau = estimate_delay_and_remove(H_used, f, fs, band_lo=band_lo, band_hi=band_hi, mask=mask)
-
-        # baseline correction (if provided)
-        if baseline is not None:
-            f0, H0, mask0 = baseline
-            if f0.shape != f.shape or np.max(np.abs(f0 - f)) != 0.0:
-                raise RuntimeError(
-                    "Baseline frequency grid doesn't match. Ensure fs/N/n_fft are identical."
-                )
-            H_used = apply_baseline_correction(H_used, H0, mask0=mask0)
+        driver.bode_acquire_step(N, thr_rel, remove_delay, band_lo, band_hi, baseline is not None)
+        H_used = driver.bode_get_h_real() + 1j * driver.bode_get_h_imag()
+        tau = driver.bode_get_tau()
 
         # update plot occasionally
         if (k % update_every) == 0 or (k == n_acq - 1):
@@ -266,10 +258,8 @@ def live_bode(
     plt.show()
 
     # return final (useful for baseline save)
-    H_final = Syx / (Sxx + 1e-30)
-    mask_final = Sxx > (thr_rel * np.max(Sxx))
-    if remove_delay:
-        H_final, _tau = estimate_delay_and_remove(H_final, f, fs, band_lo=band_lo, band_hi=band_hi, mask=mask_final)
+    H_final = driver.bode_get_h_real() + 1j * driver.bode_get_h_imag()
+    mask_final = driver.bode_get_mask().astype(bool)
     return f, H_final, mask_final
 
 

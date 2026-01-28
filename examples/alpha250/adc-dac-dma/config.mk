@@ -16,5 +16,6 @@ CORES += $(PROJECT_PATH)/axis_trig_gate_v1_0
 
 include $(SDK_PATH)/boards/alpha250/drivers/drivers.mk
 DRIVERS += $(PROJECT_PATH)/adc-dac-dma.hpp
+DRIVERS += $(PROJECT_PATH)/adc-dac-dma.cpp
 
 WEB_FILES += $(SDK_PATH)/web/index.html

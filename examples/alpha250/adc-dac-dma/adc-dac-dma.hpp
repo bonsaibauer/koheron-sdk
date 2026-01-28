@@ -9,6 +9,7 @@
 #include "server/hardware/memory_manager.hpp"
 
 #include <array>
+#include <complex>
 #include <cstdint>
 #include <vector>
 #include <thread>
@@ -56,6 +57,7 @@ class AdcDacDma
     AdcDacDma()
     : ctl     (hw::get_memory<mem::control>())
     , dma     (hw::get_memory<mem::dma>())
+    , ram_mm2s(hw::get_memory<mem::ram_mm2s>())
     , ram_s2mm(hw::get_memory<mem::ram_s2mm>())
     , axi_hp0 (hw::get_memory<mem::axi_hp0>())
     , axi_hp2 (hw::get_memory<mem::axi_hp2>())
@@ -147,6 +149,38 @@ class AdcDacDma
         dma.clear_bit<Dma_regs::s2mm_dmacr, 0>();
     }
 
+    void bode_reset(uint32_t n_fft, double fs_hz);
+    void bode_set_baseline(const std::vector<double>& h_real,
+                           const std::vector<double>& h_imag,
+                           const std::vector<uint8_t>& mask);
+    void bode_clear_baseline();
+    void bode_acquire_step(uint32_t N,
+                           double thr_rel,
+                           bool remove_delay,
+                           double band_lo,
+                           double band_hi,
+                           bool apply_baseline);
+
+    const auto& bode_get_h_real() const {
+        return bode_state.h_real;
+    }
+
+    const auto& bode_get_h_imag() const {
+        return bode_state.h_imag;
+    }
+
+    const auto& bode_get_mask() const {
+        return bode_state.mask;
+    }
+
+    double bode_get_tau() const {
+        return bode_state.last_tau;
+    }
+
+    uint32_t bode_get_count() const {
+        return bode_state.count;
+    }
+
     auto& get_adc_data() {
         data = ram_s2mm.read_array<uint32_t, n_desc * n_pts>();
         return data;
@@ -161,6 +195,7 @@ class AdcDacDma
   private:
     hw::Memory<mem::control>&  ctl;
     hw::Memory<mem::dma>&      dma;
+    hw::Memory<mem::ram_mm2s>& ram_mm2s;
     hw::Memory<mem::ram_s2mm>& ram_s2mm;
     hw::Memory<mem::axi_hp0>&  axi_hp0;
     hw::Memory<mem::axi_hp2>&  axi_hp2;
@@ -169,6 +204,25 @@ class AdcDacDma
     hw::Memory<mem::sclr>&     sclr;
 
     std::array<uint32_t, n_desc * n_pts> data;
+
+    struct BodeState {
+        uint32_t n_fft = 0;
+        double fs = 0.0;
+        std::vector<double> window{};
+        std::vector<double> freqs{};
+        std::vector<double> sxx{};
+        std::vector<std::complex<double>> syx{};
+        std::vector<double> h_real{};
+        std::vector<double> h_imag{};
+        std::vector<uint8_t> mask{};
+        std::vector<std::complex<double>> baseline{};
+        std::vector<uint8_t> baseline_mask{};
+        bool baseline_valid = false;
+        double last_tau = 0.0;
+        uint32_t count = 0;
+    };
+
+    BodeState bode_state;
 
     void mmio_flush() {
         (void)dma.read<Dma_regs::mm2s_dmasr>();
