@@ -2,6 +2,12 @@ name: Build Red Pitaya Scale
 
 on:
   workflow_dispatch:
+    inputs:
+      upload_release:
+        description: "Create GitHub release with zip"
+        required: false
+        default: true
+        type: boolean
   push:
     paths:
       - "examples/red-pitaya/scale/**"
@@ -10,14 +16,32 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: red-pitaya-scale-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-release:
-    # Requires a self-hosted runner with Vivado/toolchain installed.
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Preflight diagnostics
+        run: |
+          set -euxo pipefail
+          echo "event_name=${GITHUB_EVENT_NAME}"
+          echo "ref=${GITHUB_REF}"
+          uname -a
+          lscpu | head -n 20
+          df -h
+          which make || true
+          which bash || true
+          which python || true
+          which node || true
+          which npm || true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -32,24 +56,42 @@ jobs:
       - name: Install build dependencies
         run: |
           set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y make g++-9-arm-linux-gnueabihf gcc-9-arm-linux-gnueabihf curl
+          sudo update-alternatives --install /usr/bin/arm-linux-gnueabihf-gcc arm-linux-gnueabihf-gcc /usr/bin/arm-linux-gnueabihf-gcc-9 100
+          sudo update-alternatives --install /usr/bin/arm-linux-gnueabihf-g++ arm-linux-gnueabihf-g++ /usr/bin/arm-linux-gnueabihf-g++-9 100
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           npm install typescript
           npm install @types/jquery@2.0.46 @types/jquery-mousewheel@3.1.5 websocket @types/node
+          make --version
+          arm-linux-gnueabihf-g++ --version
 
-      - name: Build scale instrument
+      - name: Build scale server and web
         run: |
           set -euxo pipefail
           make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml clean
           make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml server
           make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml web
-          make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml
+
+      - name: Create release zip payload
+        run: |
+          set -euxo pipefail
+          mkdir -p tmp/examples/red-pitaya/scale/release
+          cp -f tmp/examples/red-pitaya/scale/serverd tmp/examples/red-pitaya/scale/release/
+          cp -f tmp/examples/red-pitaya/scale/web/app.js tmp/examples/red-pitaya/scale/release/
+          cp -f examples/red-pitaya/scale/config.yml tmp/examples/red-pitaya/scale/release/
+          cp -f examples/red-pitaya/scale/block_design.tcl tmp/examples/red-pitaya/scale/release/
+          cp -f examples/red-pitaya/scale/scale.hpp tmp/examples/red-pitaya/scale/release/
+          cp -f examples/red-pitaya/scale/web/index.html tmp/examples/red-pitaya/scale/release/
+          cp -f web/main.css tmp/examples/red-pitaya/scale/release/
+          (cd tmp/examples/red-pitaya/scale/release && zip -r ../digital-scale-ci.zip .)
 
       - name: Resolve zip and release metadata
         id: meta
         run: |
           set -euxo pipefail
-          zip_path="$(ls tmp/examples/red-pitaya/scale/*.zip | head -n 1)"
+          zip_path="tmp/examples/red-pitaya/scale/digital-scale-ci.zip"
           stamp="$(date -u +'%Y%m%d-%H%M%S')"
           tag="scale-${stamp}"
           title="Scale Build ${stamp} UTC"
@@ -58,6 +100,7 @@ jobs:
           echo "title=${title}" >> "$GITHUB_OUTPUT"
 
       - name: Create release and upload zip
+        if: ${{ github.event_name == 'push' || inputs.upload_release == true }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
