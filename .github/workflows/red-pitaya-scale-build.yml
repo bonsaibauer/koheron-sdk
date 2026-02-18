@@ -79,14 +79,9 @@ jobs:
           set -euxo pipefail
           mkdir -p tmp/examples/red-pitaya/scale/release
           cp -f tmp/examples/red-pitaya/scale/serverd tmp/examples/red-pitaya/scale/release/
-          cp -f tmp/examples/red-pitaya/scale/web/app.js tmp/examples/red-pitaya/scale/release/
-          cp -f examples/red-pitaya/scale/config.yml tmp/examples/red-pitaya/scale/release/
-          cp -f examples/red-pitaya/scale/block_design.tcl tmp/examples/red-pitaya/scale/release/
-          cp -f examples/red-pitaya/scale/expansion_connector.xdc tmp/examples/red-pitaya/scale/release/
-          cp -f examples/red-pitaya/scale/web/index.html tmp/examples/red-pitaya/scale/release/
-          cp -f examples/red-pitaya/scale/web/scale.html tmp/examples/red-pitaya/scale/release/
-          cp -f examples/red-pitaya/scale/web/navigation-scale.html tmp/examples/red-pitaya/scale/release/
-          cp -f web/main.css tmp/examples/red-pitaya/scale/release/
+          cp -f tmp/examples/red-pitaya/scale/web/* tmp/examples/red-pitaya/scale/release/
+          if [ -f tmp/examples/red-pitaya/scale/version ]; then cp -f tmp/examples/red-pitaya/scale/version tmp/examples/red-pitaya/scale/release/; fi
+          if [ -f tmp/examples/red-pitaya/scale/scale.bit ]; then cp -f tmp/examples/red-pitaya/scale/scale.bit tmp/examples/red-pitaya/scale/release/; fi
           (cd tmp/examples/red-pitaya/scale/release && zip -r ../scale.zip .)
 
       - name: Resolve zip and release metadata
@@ -94,7 +89,7 @@ jobs:
         run: |
           set -euxo pipefail
           zip_path="tmp/examples/red-pitaya/scale/scale.zip"
-          stamp="$(date -u +'%Y%m%d-%H%M%S')"
+          stamp="$(TZ=Europe/Berlin date +'%Y%m%d-%H%M%S')"
           tag="scale-${stamp}"
           title="${stamp}"
           echo "zip_path=${zip_path}" >> "$GITHUB_OUTPUT"
