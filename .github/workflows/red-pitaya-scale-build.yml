@@ -85,16 +85,16 @@ jobs:
           cp -f examples/red-pitaya/scale/scale.hpp tmp/examples/red-pitaya/scale/release/
           cp -f examples/red-pitaya/scale/web/index.html tmp/examples/red-pitaya/scale/release/
           cp -f web/main.css tmp/examples/red-pitaya/scale/release/
-          (cd tmp/examples/red-pitaya/scale/release && zip -r ../digital-scale-ci.zip .)
+          (cd tmp/examples/red-pitaya/scale/release && zip -r ../scale.zip .)
 
       - name: Resolve zip and release metadata
         id: meta
         run: |
           set -euxo pipefail
-          zip_path="tmp/examples/red-pitaya/scale/digital-scale-ci.zip"
+          zip_path="tmp/examples/red-pitaya/scale/scale.zip"
           stamp="$(date -u +'%Y%m%d-%H%M%S')"
           tag="scale-${stamp}"
-          title="Scale Build ${stamp} UTC"
+          title="${stamp}"
           echo "zip_path=${zip_path}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "title=${title}" >> "$GITHUB_OUTPUT"
