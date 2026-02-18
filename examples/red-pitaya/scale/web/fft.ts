@@ -97,4 +97,11 @@ class FFT {
             cb(windowIndex);
         });
     }
+
+    getADCRawData(n_avg: number, cb: (adc0: number, adc1: number) => void): void {
+        this.client.readTuple(Command(this.id, this.cmds['get_adc_raw_data'], n_avg), 'ii',
+                              (tup: [number, number]) => {
+            cb(tup[0], tup[1]);
+        });
+    }
 }

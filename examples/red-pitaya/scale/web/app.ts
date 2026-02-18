@@ -1,189 +1,99 @@
 class App {
-    private driver: ScaleDriver;
-    private client: Client;
 
-    private tareOffset: number = 0.0;
+    public plot: Plot;
+    private fft: FFT;
+    public fftApp: FFTApp;
+    public laserDriver: LaserDriver;
+    public laserControl: LaserControl;
+    private exportFile: ExportFile;
+    private imports: Imports;
+    public ddsFrequency: DDSFrequency;
+    private plotBasics: PlotBasics;
+
+    private n_pts: number;
+    private x_min: number;
+    private x_max: number;
+    private y_min: number;
+    private y_max: number;
+    private tareOffset: number = 0;
     private calibrationFactor: number = 0.0005;
-    private fftBuffer: number[] = [];
 
-    constructor(window: Window, document: Document, ip: string) {
-        this.client = new Client(ip, 5);
+    constructor(window: Window, document: Document,
+                ip: string, plot_placeholder: JQuery) {
+        let client = new Client(ip, 5);
+        const page = document.body.getAttribute('data-page') || 'fft';
 
         window.addEventListener('HTMLImportsLoaded', () => {
-            new Imports(document);
+            client.init( () => {
+                this.imports = new Imports(document);
+                this.fft = new FFT(client);
 
-            this.client.init(() => {
-                this.driver = new ScaleDriver(this.client);
+                if (page === 'fft') {
+                    this.fft.init( () => {
+                        this.fftApp = new FFTApp(document, this.fft);
+                        this.ddsFrequency = new DDSFrequency(document, this.fft);
 
-                if (document.body.getAttribute('data-page') === 'scale') {
+                        this.n_pts = this.fft.fft_size / 2;
+                        this.x_min = 0;
+                        this.x_max = this.fft.status.fs / 1E6 / 2;
+                        this.y_min = -200;
+                        this.y_max = 170;
+
+                        this.plotBasics = new PlotBasics(document, plot_placeholder, this.n_pts, this.x_min, this.x_max, this.y_min, this.y_max, this.fft, "", "Frequency (MHz)");
+                        this.plot = new Plot(document, this.fft, this.plotBasics);
+
+                        this.laserDriver = new LaserDriver(client);
+                        this.laserControl = new LaserControl(document, this.laserDriver);
+                        this.exportFile = new ExportFile(document, this.plot);
+                    });
+                } else {
                     this.initScalePage(document);
-                }
-
-                if (document.body.getAttribute('data-page') === 'fft') {
-                    this.initFftPage(document);
                 }
             });
         }, false);
 
-        window.onbeforeunload = () => { this.client.exit(); };
+        window.onbeforeunload = () => { client.exit(); };
     }
 
-    private initScalePage(document: Document): void {
+    initScalePage(document: Document): void {
         const displayValue = <HTMLElement>document.getElementById('value');
-        const displayRaw = <HTMLElement>document.getElementById('adc-raw');
+        const adc0El = <HTMLElement>document.getElementById('adc-raw');
+        const adc1El = <HTMLElement>document.getElementById('adc1-raw');
         const btnTare = <HTMLButtonElement>document.getElementById('btn-tare');
         const btnUpdate = <HTMLButtonElement>document.getElementById('btn-update-settings');
         const inputCalib = <HTMLInputElement>document.getElementById('input-calib');
         const inputFreq = <HTMLInputElement>document.getElementById('input-freq');
 
-        this.updateSettings(inputFreq);
+        this.applyScaleSettings(inputCalib, inputFreq);
 
         btnTare.onclick = () => {
-            this.performTare();
+            this.fft.getADCRawData(16, (adc0, _) => {
+                this.tareOffset = adc0;
+            });
         };
 
         btnUpdate.onclick = () => {
-            this.calibrationFactor = parseFloat(inputCalib.value);
-            this.updateSettings(inputFreq);
+            this.applyScaleSettings(inputCalib, inputFreq);
         };
 
-        this.scaleLoop(displayValue, displayRaw);
+        const loop = () => {
+            this.fft.getADCRawData(8, (adc0, adc1) => {
+                adc0El.innerText = adc0.toString();
+                adc1El.innerText = adc1.toString();
+                const weight = (adc0 - this.tareOffset) * this.calibrationFactor;
+                displayValue.innerText = weight.toFixed(3);
+                setTimeout(loop, 100);
+            });
+        };
+        loop();
     }
 
-    private initFftPage(document: Document): void {
-        const plotPlaceholder = <HTMLDivElement>document.getElementById('plot-placeholder');
-        const rawLabel = <HTMLElement>document.getElementById('fft-raw');
-        const inputFftSize = <HTMLInputElement>document.getElementById('fft-size');
-        const inputFftPeriod = <HTMLInputElement>document.getElementById('fft-period');
-
-        const canvas = document.createElement('canvas');
-        canvas.id = 'fft-canvas';
-        canvas.width = Math.max(900, plotPlaceholder.clientWidth || 900);
-        canvas.height = 420;
-        canvas.style.width = '100%';
-        canvas.style.height = '420px';
-        plotPlaceholder.innerHTML = '';
-        plotPlaceholder.appendChild(canvas);
-
-        this.fftLoop(inputFftSize, inputFftPeriod, rawLabel);
-    }
-
-    private updateSettings(inputFreq: HTMLInputElement): void {
+    applyScaleSettings(inputCalib: HTMLInputElement, inputFreq: HTMLInputElement): void {
+        this.calibrationFactor = parseFloat(inputCalib.value);
         const freq = parseFloat(inputFreq.value);
-        this.driver.set_frequency(freq);
+        this.fft.setDDSFreq(0, freq);
     }
 
-    private performTare(): void {
-        this.driver.get_adc_data((val) => {
-            this.tareOffset = val;
-        });
-    }
-
-    private scaleLoop(displayEl: HTMLElement, debugEl: HTMLElement): void {
-        this.driver.get_adc_data((rawVal) => {
-            debugEl.innerText = rawVal.toString();
-            const diff = rawVal - this.tareOffset;
-            const weight = diff * this.calibrationFactor;
-            displayEl.innerText = weight.toFixed(3);
-
-            setTimeout(() => {
-                this.scaleLoop(displayEl, debugEl);
-            }, 100);
-        });
-    }
-
-    private fftLoop(inputFftSize: HTMLInputElement, inputFftPeriod: HTMLInputElement, rawLabel: HTMLElement): void {
-        this.driver.get_adc_data((rawVal) => {
-            const signed = this.toSigned14(rawVal);
-            rawLabel.innerText = signed.toString();
-
-            this.fftBuffer.push(signed);
-            const fftSize = this.clamp(this.parseOrDefault(inputFftSize.value, 128), 32, 256);
-            while (this.fftBuffer.length > fftSize) {
-                this.fftBuffer.shift();
-            }
-
-            if (this.fftBuffer.length >= fftSize) {
-                const mags = this.computeMagnitudeSpectrum(this.fftBuffer);
-                this.drawSpectrum(mags);
-            }
-
-            const period = this.clamp(this.parseOrDefault(inputFftPeriod.value, 120), 60, 1000);
-            setTimeout(() => {
-                this.fftLoop(inputFftSize, inputFftPeriod, rawLabel);
-            }, period);
-        });
-    }
-
-    private toSigned14(v: number): number {
-        const x = v & 0x3FFF;
-        return x >= 0x2000 ? x - 0x4000 : x;
-    }
-
-    private parseOrDefault(v: string, fallback: number): number {
-        const n = parseInt(v, 10);
-        return Number.isFinite(n) ? n : fallback;
-    }
-
-    private clamp(v: number, min: number, max: number): number {
-        return Math.min(max, Math.max(min, v));
-    }
-
-    private computeMagnitudeSpectrum(samples: number[]): number[] {
-        const n = samples.length;
-        const bins = Math.floor(n / 2);
-        const result = new Array<number>(bins);
-
-        for (let k = 0; k < bins; k++) {
-            let re = 0.0;
-            let im = 0.0;
-            for (let i = 0; i < n; i++) {
-                const phi = (2.0 * Math.PI * k * i) / n;
-                re += samples[i] * Math.cos(phi);
-                im -= samples[i] * Math.sin(phi);
-            }
-            result[k] = Math.sqrt(re * re + im * im);
-        }
-
-        return result;
-    }
-
-    private drawSpectrum(mags: number[]): void {
-        const canvas = <HTMLCanvasElement>document.getElementById('fft-canvas');
-        if (!canvas) {
-            return;
-        }
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            return;
-        }
-
-        const w = canvas.width;
-        const h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
-
-        let maxMag = 1.0;
-        for (let i = 0; i < mags.length; i++) {
-            if (mags[i] > maxMag) {
-                maxMag = mags[i];
-            }
-        }
-
-        ctx.strokeStyle = '#2b7cff';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let i = 0; i < mags.length; i++) {
-            const x = (i / (mags.length - 1)) * (w - 1);
-            const y = h - (mags[i] / maxMag) * (h - 2) - 1;
-            if (i === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
-            }
-        }
-        ctx.stroke();
-    }
 }
 
-let app = new App(window, document, location.hostname);
+let app = new App(window, document, location.hostname, $('#plot-placeholder'));

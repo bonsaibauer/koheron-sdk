@@ -7,6 +7,7 @@
   <meta name="author" content="Koheron">
   <meta charset="utf-8">
 
+  <!--http://stackoverflow.com/questions/49547/making-sure-a-web-page-is-not-cached-across-all-browsers-->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
@@ -21,7 +22,7 @@
   <script type="text/javascript" src="jquery.min.js"></script>
   <script type="text/javascript" src="bootstrap.min.js"></script>
 
-  <link rel="import" href="navigation.html" data-parent="navigation">
+  <link rel="import" href="navigation-scale.html" data-parent="navigation">
   <link rel="import" href="plot-basics.html" data-parent="plot-basics">
   <link rel="import" href="yunit.html" data-parent="yunit">
   <link rel="import" href="fft-window.html" data-parent="fft-window">
@@ -58,18 +59,6 @@
       <section id="dds-frequency"></section>
       <section id="export-file"></section>
       <section id="laser-control"></section>
-
-      <div class="well" style="margin-top: 10px;">
-        <div style="margin-bottom: 8px;">
-          <label for="fft-size" style="margin-right: 8px;">FFT Size</label>
-          <input id="fft-size" type="number" value="128" min="32" max="256" step="32" style="width: 90px;">
-        </div>
-        <div style="margin-bottom: 8px;">
-          <label for="fft-period" style="margin-right: 8px;">Update (ms)</label>
-          <input id="fft-period" type="number" value="120" min="60" max="1000" step="20" style="width: 90px;">
-        </div>
-        <div>ADC raw: <strong id="fft-raw">0</strong></div>
-      </div>
 
     </div>
 

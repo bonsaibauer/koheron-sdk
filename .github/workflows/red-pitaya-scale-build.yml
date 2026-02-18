@@ -82,8 +82,10 @@ jobs:
           cp -f tmp/examples/red-pitaya/scale/web/app.js tmp/examples/red-pitaya/scale/release/
           cp -f examples/red-pitaya/scale/config.yml tmp/examples/red-pitaya/scale/release/
           cp -f examples/red-pitaya/scale/block_design.tcl tmp/examples/red-pitaya/scale/release/
-          cp -f examples/red-pitaya/scale/scale.hpp tmp/examples/red-pitaya/scale/release/
+          cp -f examples/red-pitaya/scale/expansion_connector.xdc tmp/examples/red-pitaya/scale/release/
           cp -f examples/red-pitaya/scale/web/index.html tmp/examples/red-pitaya/scale/release/
+          cp -f examples/red-pitaya/scale/web/scale.html tmp/examples/red-pitaya/scale/release/
+          cp -f examples/red-pitaya/scale/web/navigation-scale.html tmp/examples/red-pitaya/scale/release/
           cp -f web/main.css tmp/examples/red-pitaya/scale/release/
           (cd tmp/examples/red-pitaya/scale/release && zip -r ../scale.zip .)
 
