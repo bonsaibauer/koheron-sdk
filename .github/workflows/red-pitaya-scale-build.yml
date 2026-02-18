@@ -1,0 +1,65 @@
+name: Build Red Pitaya Scale
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "examples/red-pitaya/scale/**"
+      - ".github/workflows/red-pitaya-scale-build.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    # Requires a self-hosted runner with Vivado/toolchain installed.
+    runs-on: [self-hosted, linux, x64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install typescript
+          npm install @types/jquery@2.0.46 @types/jquery-mousewheel@3.1.5 websocket @types/node
+
+      - name: Build scale instrument
+        run: |
+          set -euxo pipefail
+          make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml clean
+          make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml server
+          make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml web
+          make BUILD_METHOD=native CONFIG=examples/red-pitaya/scale/config.yml
+
+      - name: Resolve zip and release metadata
+        id: meta
+        run: |
+          set -euxo pipefail
+          zip_path="$(ls tmp/examples/red-pitaya/scale/*.zip | head -n 1)"
+          stamp="$(date -u +'%Y%m%d-%H%M%S')"
+          tag="scale-${stamp}"
+          title="Scale Build ${stamp} UTC"
+          echo "zip_path=${zip_path}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "title=${title}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release and upload zip
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          files: ${{ steps.meta.outputs.zip_path }}

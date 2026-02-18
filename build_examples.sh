@@ -23,5 +23,6 @@ make BUILD_METHOD=$build_method CONFIG=examples/red-pitaya/cluster/config.yml MO
 make BUILD_METHOD=$build_method CONFIG=examples/red-pitaya/dual-dds/config.yml MODE=$mode $target
 make BUILD_METHOD=$build_method CONFIG=examples/red-pitaya/fft/config.yml MODE=$mode $target
 make BUILD_METHOD=$build_method CONFIG=examples/red-pitaya/phase-noise-analyzer/config.yml MODE=$mode $target
+make BUILD_METHOD=$build_method CONFIG=examples/red-pitaya/scale/config.yml MODE=$mode $target
 make BUILD_METHOD=$build_method CONFIG=examples/zedboard/led-blinker/config.yml MODE=$mode $target
 make BUILD_METHOD=$build_method CONFIG=examples/zedboard/picoblaze/config.yml MODE=$mode $target
