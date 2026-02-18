@@ -37,7 +37,17 @@ drivers:
 
 web:
   - ./web/index.html
+  - ./web/scale.html
   - web/koheron.ts
   - ./web/scale.ts
   - ./web/app.ts
+  - ./web/navigation.html
+  - web/plot-basics/plot-basics.html
+  - ./web/plot/yunit.html
+  - ./web/fft/fft-window.html
+  - ./web/fft/input-channel.html
+  - ./web/plot/peak-detection.html
+  - web/dds-frequency/dds-frequency.html
+  - ./web/export-file/export-file.html
+  - web/laser-control.html
   - web/main.css

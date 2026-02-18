@@ -1,61 +1,91 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Red Pitaya Waage</title>
-    <link rel="stylesheet" type="text/css" href="main.css">
-    <style>
-        body { font-family: sans-serif; background-color: #f4f4f4; text-align: center; padding-top: 50px; }
-        .card {
-            background: white; width: 400px; margin: 0 auto; padding: 20px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 8px;
-        }
-        h1 { color: #333; }
-        #weight-display {
-            font-size: 4em; font-weight: bold; color: #2c3e50; margin: 20px 0;
-        }
-        .unit { font-size: 0.5em; color: #7f8c8d; }
-        button {
-            background-color: #3498db; color: white; border: none; padding: 10px 20px;
-            font-size: 1.2em; cursor: pointer; border-radius: 5px; width: 100%;
-        }
-        button:hover { background-color: #2980b9; }
-        .controls { margin-top: 30px; text-align: left; border-top: 1px solid #eee; padding-top: 20px; }
-        .control-group { margin-bottom: 10px; }
-        label { display: inline-block; width: 150px; font-weight: bold; }
-        input { padding: 5px; width: 100px; }
-        .debug-info { margin-top: 20px; font-size: 0.8em; color: #aaa; }
-    </style>
+  <title>Koheron | FFT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="author" content="Koheron">
+  <meta charset="utf-8">
+
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <script type="text/javascript" src="html-imports.min.js"></script>
+
+  <link rel="shortcut icon" href="kbird.ico">
+  <link rel="stylesheet" type="text/css" href="bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="_koheron.css">
+  <link rel="stylesheet" type="text/css" href="main.css">
+
+  <script type="text/javascript" src="jquery.min.js"></script>
+  <script type="text/javascript" src="bootstrap.min.js"></script>
+
+  <link rel="import" href="navigation.html" data-parent="navigation">
+  <link rel="import" href="plot-basics.html" data-parent="plot-basics">
+  <link rel="import" href="yunit.html" data-parent="yunit">
+  <link rel="import" href="fft-window.html" data-parent="fft-window">
+  <link rel="import" href="input-channel.html" data-parent="input-channel">
+  <link rel="import" href="peak-detection.html" data-parent="peak-detection">
+  <link rel="import" href="dds-frequency.html" data-parent="dds-frequency">
+  <link rel="import" href="export-file.html" data-parent="export-file">
+  <link rel="import" href="laser-control.html" data-parent="laser-control">
+
 </head>
-<body>
 
-    <div class="card">
-        <h1>Kapazitive Waage</h1>
+<body data-page="fft">
 
-        <div id="weight-display">
-            <span id="value">0.000</span> <span class="unit">kg</span>
-        </div>
+<div id="navigation"></div>
 
-        <button id="btn-tare">TARA (Null setzen)</button>
+<div id="main" class="container-fluid" style="padding: 10px">
 
-        <div class="controls">
-            <div class="control-group">
-                <label>Kalibrierungs-Faktor:</label>
-                <input type="number" id="input-calib" value="0.0005" step="0.0001">
-            </div>
-            <div class="control-group">
-                <label>Frequenz (Hz):</label>
-                <input type="number" id="input-freq" value="100000" step="1000">
-            </div>
-            <button id="btn-update-settings" style="background-color: #2ecc71; font-size: 1em; margin-top: 10px;">Einstellungen übernehmen</button>
-        </div>
+  <div class="row">
 
-        <div class="debug-info">
-            ADC Rohwert: <span id="adc-raw">0</span>
-        </div>
+    <div class="col-md-8">
+      <div id="plot-placeholder" class="plot-placeholder"></div>
+      <div id="plot-basics"></div>
     </div>
 
-    <script src="app.js"></script>
+    <div class="col-md-4">
+
+      <section style="margin-bottom: 20px;">
+        <div id="yunit"></div>
+        <div id="fft-window"></div>
+        <div id="input-channel"></div>
+        <div id="peak-detection"></div>
+      </section>
+
+      <section id="dds-frequency"></section>
+      <section id="export-file"></section>
+      <section id="laser-control"></section>
+
+      <div class="well" style="margin-top: 10px;">
+        <div style="margin-bottom: 8px;">
+          <label for="fft-size" style="margin-right: 8px;">FFT Size</label>
+          <input id="fft-size" type="number" value="128" min="32" max="256" step="32" style="width: 90px;">
+        </div>
+        <div style="margin-bottom: 8px;">
+          <label for="fft-period" style="margin-right: 8px;">Update (ms)</label>
+          <input id="fft-period" type="number" value="120" min="60" max="1000" step="20" style="width: 90px;">
+        </div>
+        <div>ADC raw: <strong id="fft-raw">0</strong></div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+  <script language="javascript" type="text/javascript" src="jquery.flot.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.resize.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.selection.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.time.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.axislabels.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.canvas.js"></script>
+
+  <script src="app.js"></script>
+
 </body>
+
 </html>
