@@ -22,38 +22,59 @@
   <link rel="import" href="navigation-scale.html" data-parent="navigation">
 </head>
 
-<body data-page="scale">
+<body>
 <div id="navigation"></div>
 
 <div id="main" class="container-fluid" style="padding: 16px;">
   <div class="row">
-    <div class="col-md-6 col-md-offset-3">
+    <div class="col-md-8 col-md-offset-2">
+
+      <div class="panel panel-default" style="margin-bottom: 20px;">
+        <div class="panel-heading"><strong>ADC-DAC Live</strong></div>
+        <div class="panel-body">
+          <div class="row">
+            <div class="col-sm-6">
+              <p>ADC0: <strong id="adc0-live">0</strong></p>
+              <p>ADC1: <strong id="adc1-live">0</strong></p>
+            </div>
+            <div class="col-sm-6">
+              <div class="form-group">
+                <label for="dac0-input">DAC0 (0..16383)</label>
+                <input type="number" id="dac0-input" class="form-control" value="0" min="0" max="16383" step="1">
+              </div>
+              <div class="form-group">
+                <label for="dac1-input">DAC1 (0..16383)</label>
+                <input type="number" id="dac1-input" class="form-control" value="0" min="0" max="16383" step="1">
+              </div>
+              <button id="btn-set-dac" class="btn btn-primary btn-block">DAC Werte setzen</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="panel panel-default">
         <div class="panel-heading"><strong>Scale</strong></div>
         <div class="panel-body">
           <div style="font-size: 3.8em; font-weight: 700; margin-bottom: 8px;">
-            <span id="value">0.000</span> <span style="font-size: 0.45em;">kg</span>
+            <span id="weight-value">0.000</span> <span style="font-size: 0.45em;">kg</span>
           </div>
 
-          <button id="btn-tare" class="btn btn-primary btn-block">TARA (Null setzen)</button>
+          <button id="btn-tare" class="btn btn-warning btn-block">Tara (Null setzen)</button>
 
           <div style="margin-top: 14px;">
             <div class="form-group">
-              <label for="input-calib">Kalibrierungs-Faktor</label>
-              <input type="number" id="input-calib" class="form-control" value="0.0005" step="0.0001">
+              <label for="input-calibration">Kalibrierungs-Faktor (kg pro ADC-Schritt)</label>
+              <input type="number" id="input-calibration" class="form-control" value="0.0005" step="0.0001">
             </div>
-            <div class="form-group">
-              <label for="input-freq">DDS Frequency CH0 (Hz)</label>
-              <input type="number" id="input-freq" class="form-control" value="100000" step="1000">
-            </div>
-            <button id="btn-update-settings" class="btn btn-success btn-block">Einstellungen übernehmen</button>
+            <button id="btn-save-scale" class="btn btn-success btn-block">Kalibrierung übernehmen</button>
           </div>
 
           <hr>
-          <div>ADC0 Rohwert: <strong id="adc-raw">0</strong></div>
-          <div>ADC1 Rohwert: <strong id="adc1-raw">0</strong></div>
+          <div>ADC0 Rohwert (Scale): <strong id="adc0-scale">0</strong></div>
+          <div>ADC1 Rohwert (Scale): <strong id="adc1-scale">0</strong></div>
         </div>
       </div>
+
     </div>
   </div>
 </div>
