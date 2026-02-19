@@ -5,17 +5,17 @@ SHELL := bash
 .DELETE_ON_ERROR:
 .SUFFIXES:
 
-CONFIG ?= examples/alpha250/fft/config.yml
+CONFIG ?= examples/red-pitaya/adc-dac-bram-extra/config.yml
 SDK_PATH ?= .
 MODE ?= development
 SDK_FULL_PATH = $(realpath $(SDK_PATH))
-HOST ?= 192.168.1.100
+HOST ?= koheron
 TMP ?= tmp
 
 KOHERON_VERSION_FILE := $(SDK_PATH)/version
 KOHERON_VERSION := $(shell cat $(KOHERON_VERSION_FILE))
-VIVADO_VERSION := 2017.2
-VIVADO_PATH := /opt/Xilinx/Vivado
+VIVADO_VERSION := 2024.2
+VIVADO_PATH := /tools/Xilinx/Vivado
 PYTHON := python3
 # Use GCC version >=7
 GCC_VERSION := 9

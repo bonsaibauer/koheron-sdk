@@ -23,81 +23,81 @@ WEB_DOWNLOADS += $(TMP_WEB_PATH)/navigation.html
 FLOT_VERSION = 0.8.3
 #FLOT_VERSION = 4.2.6
 
-$(TMP_WEB_PATH)/_koheron.css:
+$(TMP_WEB_PATH)/_koheron.css: download/_koheron.css
 	mkdir -p $(@D)
-	curl https://assets.koheron.com/css/main.css -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/jquery.flot.js:
+$(TMP_WEB_PATH)/jquery.flot.js: download//jquery.flot.js
 	mkdir -p $(@D)
-	curl https://cdnjs.cloudflare.com/ajax/libs/flot/$(FLOT_VERSION)/jquery.flot.min.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/jquery.flot.resize.js:
+$(TMP_WEB_PATH)/jquery.flot.resize.js: download/jquery.flot.resize.js
 	mkdir -p $(@D)
-	curl https://cdnjs.cloudflare.com/ajax/libs/flot/$(FLOT_VERSION)/jquery.flot.resize.min.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/jquery.flot.selection.js:
+$(TMP_WEB_PATH)/jquery.flot.selection.js: download/jquery.flot.selection.js
 	mkdir -p $(@D)
-	curl https://cdnjs.cloudflare.com/ajax/libs/flot/$(FLOT_VERSION)/jquery.flot.selection.min.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/jquery.flot.time.js:
+$(TMP_WEB_PATH)/jquery.flot.time.js: download/jquery.flot.time.js
 	mkdir -p $(@D)
-	curl https://cdnjs.cloudflare.com/ajax/libs/flot/$(FLOT_VERSION)/jquery.flot.time.min.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/jquery.flot.axislabels.js:
+$(TMP_WEB_PATH)/jquery.flot.axislabels.js: download/jquery.flot.axislabels.js
 	mkdir -p $(@D)
-	curl https://raw.githubusercontent.com/markrcote/flot-axislabels/master/jquery.flot.axislabels.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/jquery.flot.canvas.js:
+$(TMP_WEB_PATH)/jquery.flot.canvas.js: download/jquery.flot.canvas.js
 	mkdir -p $(@D)
-	curl https://cdnjs.cloudflare.com/ajax/libs/flot/$(FLOT_VERSION)/jquery.flot.canvas.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/bootstrap.min.js:
+$(TMP_WEB_PATH)/bootstrap.min.js: download/bootstrap.min.js
 	mkdir -p $(@D)
-	curl http://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/bootstrap.min.css:
+$(TMP_WEB_PATH)/bootstrap.min.css: download/bootstrap.min.css
 	mkdir -p $(@D)
-	curl http://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/jquery.min.js:
+$(TMP_WEB_PATH)/jquery.min.js: download/jquery.min.js
 	mkdir -p $(@D)
-	curl https://code.jquery.com/jquery-3.2.0.min.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/_koheron.png:
+$(TMP_WEB_PATH)/_koheron.png: download/_koheron.png
 	mkdir -p $(@D)
-	curl https://assets.koheron.com/images/logo/koheron.png -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/_koheron_logo.svg:
+$(TMP_WEB_PATH)/_koheron_logo.svg: download/_koheron_logo.svg
 	mkdir -p $(@D)
-	curl https://assets.koheron.com/images/logo/koheron_logo.svg -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/kbird.ico:
+$(TMP_WEB_PATH)/kbird.ico: download/kbird.ico
 	mkdir -p $(@D)
-	curl https://assets.koheron.com/images/logo/koheron.ico -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/lato-v11-latin-400.woff2:
+$(TMP_WEB_PATH)/lato-v11-latin-400.woff2: download/lato-v11-latin-400.woff2
 	mkdir -p $(@D)
-	curl https://fonts.gstatic.com/s/lato/v13/1YwB1sO8YE1Lyjf12WNiUA.woff2 -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/lato-v11-latin-700.woff2:
+$(TMP_WEB_PATH)/lato-v11-latin-700.woff2: download/lato-v11-latin-700.woff2
 	mkdir -p $(@D)
-	curl https://fonts.gstatic.com/s/lato/v13/H2DMvhDLycM56KNuAtbJYA.woff2 -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/lato-v11-latin-900.woff2:
+$(TMP_WEB_PATH)/lato-v11-latin-900.woff2: download/lato-v11-latin-900.woff2
 	mkdir -p $(@D)
-	curl https://fonts.gstatic.com/s/lato/v13/tI4j516nok_GrVf4dhunkg.woff2 -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/glyphicons-halflings-regular.woff2:
+$(TMP_WEB_PATH)/glyphicons-halflings-regular.woff2: download/glyphicons-halflings-regular.woff2
 	mkdir -p $(@D)
-	curl https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/fonts/glyphicons-halflings-regular.woff2 -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/html-imports.min.js:
+$(TMP_WEB_PATH)/html-imports.min.js: download//html-imports.min.js
 	mkdir -p $(@D)
-	curl https://raw.githubusercontent.com/webcomponents/html-imports/master/html-imports.min.js -o $@
+	cp $< $@
 
-$(TMP_WEB_PATH)/html-imports.min.js.map:
+$(TMP_WEB_PATH)/html-imports.min.js.map: download/html-imports.min.js.map
 	mkdir -p $(@D)
-	curl https://raw.githubusercontent.com/webcomponents/html-imports/master/html-imports.min.js.map -o $@
+	cp $< $@
 
 $(TMP_WEB_PATH)/navigation.html: $(WEB_PATH)/navigation.html
 	mkdir -p $(@D)

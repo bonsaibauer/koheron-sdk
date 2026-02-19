@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Koheron | Scale</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="author" content="Koheron">
+  <meta charset="utf-8">
+
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <script type="text/javascript" src="html-imports.min.js"></script>
+
+  <link rel="shortcut icon" href="kbird.ico">
+  <link rel="stylesheet" type="text/css" href="bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="_koheron.css">
+  <link rel="stylesheet" type="text/css" href="main.css">
+
+  <script type="text/javascript" src="jquery.min.js"></script>
+  <script type="text/javascript" src="bootstrap.min.js"></script>
+  <link rel="import" href="navigation-scale.html" data-parent="navigation">
+</head>
+
+<body data-page="scale">
+<div id="navigation"></div>
+
+<div id="main" class="container-fluid" style="padding: 16px;">
+  <div class="row">
+    <div class="col-md-6 col-md-offset-3">
+      <div class="panel panel-default">
+        <div class="panel-heading"><strong>Scale</strong></div>
+        <div class="panel-body">
+          <div style="font-size: 3.8em; font-weight: 700; margin-bottom: 8px;">
+            <span id="value">0.000</span> <span style="font-size: 0.45em;">kg</span>
+          </div>
+
+          <button id="btn-tare" class="btn btn-primary btn-block">TARA (Null setzen)</button>
+
+          <div style="margin-top: 14px;">
+            <div class="form-group">
+              <label for="input-calib">Kalibrierungs-Faktor</label>
+              <input type="number" id="input-calib" class="form-control" value="0.0005" step="0.0001">
+            </div>
+            <div class="form-group">
+              <label for="input-freq">DDS Frequency CH0 (Hz)</label>
+              <input type="number" id="input-freq" class="form-control" value="100000" step="1000">
+            </div>
+            <button id="btn-update-settings" class="btn btn-success btn-block">Einstellungen übernehmen</button>
+          </div>
+
+          <hr>
+          <div>ADC0 Rohwert: <strong id="adc-raw">0</strong></div>
+          <div>ADC1 Rohwert: <strong id="adc1-raw">0</strong></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
