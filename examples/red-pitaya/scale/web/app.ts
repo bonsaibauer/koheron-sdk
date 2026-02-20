@@ -24,6 +24,8 @@ class App {
 
     private lastOut0 = 0;
     private lastOut1 = 0;
+    private readonly sampleRateHz = 125000000;
+    private lastPlotRangeUs: jquery.flot.range = {from: 0, to: 0};
 
     private curveVisible: {[key: string]: boolean} = {
         in1: true,
@@ -43,8 +45,10 @@ class App {
                 this.imports = new Imports(document);
                 this.connector = new Connector(client);
 
-                this.plotBasics = new PlotBasics(document, plot_placeholder, 4096, 0, 4096, -11, 11, this.connector, '', 'Diagnose IN/OUT');
+                this.plotBasics = new PlotBasics(document, plot_placeholder, 4096, 0, 4096, -11, 11, this.connector, '', '');
                 this.bindControls(document);
+                this.bindLegendToggle(document, plot_placeholder);
+                this.bindPlotActions(document);
                 this.bindScaleTools(document);
 
                 this.updateDiagnosticsPlot();
@@ -90,6 +94,62 @@ class App {
         });
     }
 
+    private bindLegendToggle(document: Document, plotPlaceholder: JQuery): void {
+        plotPlaceholder.on('click', '.legendLabel', (event: JQueryEventObject) => {
+            const label = ($(event.currentTarget).text() || '').trim();
+            const key = this.getSeriesKeyFromLabel(label);
+
+            if (!key) {
+                return;
+            }
+
+            this.curveVisible[key] = !this.curveVisible[key];
+            this.setCheckboxFromKey(document, key, this.curveVisible[key]);
+        });
+    }
+
+    private bindPlotActions(document: Document): void {
+        const resetBtn = <HTMLButtonElement>document.getElementById('btn-plot-reset-view');
+        if (!resetBtn) {
+            return;
+        }
+
+        resetBtn.addEventListener('click', () => {
+            this.plotBasics.resetView(this.lastPlotRangeUs.from, this.lastPlotRangeUs.to);
+        });
+    }
+
+    private getSeriesKeyFromLabel(label: string): string | null {
+        if (label === 'IN1') return 'in1';
+        if (label === 'IN2') return 'in2';
+        if (label === 'OUT1') return 'out1';
+        if (label === 'OUT2') return 'out2';
+        if (label === 'Weight (kg)') return 'weight';
+        if (label === 'Kalibrierung') return 'calibration';
+        return null;
+    }
+
+    private setCheckboxFromKey(document: Document, key: string, checked: boolean): void {
+        const elementMap: {[key: string]: string} = {
+            in1: 'curve-in1',
+            in2: 'curve-in2',
+            out1: 'curve-out1',
+            out2: 'curve-out2',
+            weight: 'curve-weight',
+            calibration: 'curve-calibration'
+        };
+
+        const elementId = elementMap[key];
+        if (!elementId) {
+            return;
+        }
+
+        const checkbox = <HTMLInputElement>document.getElementById(elementId);
+        if (checkbox) {
+            checkbox.checked = checked;
+        }
+    }
+
     private bindScaleTools(document: Document): void {
         this.adc0ValueEl = <HTMLElement>document.getElementById('adc0-value');
         this.adc1ValueEl = <HTMLElement>document.getElementById('adc1-value');
@@ -122,10 +182,10 @@ class App {
     private updateDiagnosticsPlot(): void {
         this.connector.getAdcSnapshot((adcRaw) => {
             this.connector.getDacSnapshot((dacRaw) => {
-                const in1Counts = this.extractChannelCounts(adcRaw, false);
-                const in2Counts = this.extractChannelCounts(adcRaw, true);
-                const out1Counts = this.extractChannelCounts(dacRaw, false);
-                const out2Counts = this.extractChannelCounts(dacRaw, true);
+                const in1Counts = this.extractChannelCounts(adcRaw, false, true);
+                const in2Counts = this.extractChannelCounts(adcRaw, true, true);
+                const out1Counts = this.extractChannelCounts(dacRaw, false, false);
+                const out2Counts = this.extractChannelCounts(dacRaw, true, false);
 
                 const in1 = this.countsToVolt(in1Counts);
                 const in2 = this.countsToVolt(in2Counts);
@@ -137,8 +197,9 @@ class App {
 
                 const range: jquery.flot.range = {
                     from: 0,
-                    to: Math.max(1, in1.length - 1)
+                    to: this.sampleIndexToMicroseconds(Math.max(1, in1.length - 1))
                 };
+                this.lastPlotRangeUs = range;
 
                 const allSeries: {[key: string]: jquery.flot.dataSeries} = {
                     in1: { label: 'IN1', data: this.toPlotData(in1), color: '#1f77b4' },
@@ -189,12 +250,12 @@ class App {
         });
     }
 
-    private extractChannelCounts(raw: Uint32Array, upperWord: boolean): number[] {
+    private extractChannelCounts(raw: Uint32Array, upperWord: boolean, isOffsetBinary: boolean): number[] {
         const data = new Array<number>(raw.length);
 
         for (let i = 0; i < raw.length; i++) {
             const sample = upperWord ? ((raw[i] >> 16) & 0x3FFF) : (raw[i] & 0x3FFF);
-            data[i] = this.toSigned14(sample);
+            data[i] = isOffsetBinary ? this.offsetBinary14ToSigned(sample) : this.toSigned14(sample);
         }
 
         return data;
@@ -206,6 +267,12 @@ class App {
             value -= 0x4000;
         }
         return value;
+    }
+
+    // ADC data is offset-binary in this design (0..16383 maps to -8192..+8191).
+    private offsetBinary14ToSigned(value14: number): number {
+        const value = value14 & 0x3FFF;
+        return ((value - 8192) & 0x3FFF) - 8192;
     }
 
     private countsToVolt(values: number[]): number[] {
@@ -239,10 +306,14 @@ class App {
         const points: number[][] = [];
 
         for (let i = 0; i < values.length; i += step) {
-            points.push([i, values[i]]);
+            points.push([this.sampleIndexToMicroseconds(i), values[i]]);
         }
 
         return points;
+    }
+
+    private sampleIndexToMicroseconds(sampleIndex: number): number {
+        return (sampleIndex / this.sampleRateHz) * 1e6;
     }
 
     private parseNumber(raw: string, fallback: number): number {

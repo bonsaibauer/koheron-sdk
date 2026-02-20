@@ -68,7 +68,7 @@ class AdcDacBram
             if (function == 0) {
                 // Original BRAM ramp behaviour
                 val2 = static_cast<int32_t>((2 * phase - 1) * dac_resolution / 2.1);
-                uint32_t val = static_cast<uint32_t>(val2 % (dac_resolution - 1));
+                uint32_t val = val2 % (dac_resolution - 1);
                 data[i] = val + (val << 16);
                 continue;
             }

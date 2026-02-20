@@ -30,7 +30,12 @@ class PlotBasics {
         private driver, private rangeFunction, private plotTitle: string) {
 
         this.plotTitleSpan = <HTMLSpanElement>document.getElementById("plot-title");
-        this.plotTitleSpan.textContent =  this.plotTitle;
+        if (this.plotTitle.length > 0) {
+            this.plotTitleSpan.textContent = this.plotTitle;
+            this.plotTitleSpan.style.display = "block";
+        } else {
+            this.plotTitleSpan.style.display = "none";
+        };
 
         this.range_x = <jquery.flot.range>{};
         this.range_x.from = this.x_min;
@@ -107,7 +112,11 @@ class PlotBasics {
                 margin: 0,
                 position: "ne",
             }
-        }
+        };
+
+        // Axis labels are rendered by jquery.flot.axislabels.js.
+        (<any>this.options.yaxis).axisLabel = "Spannung [V]";
+        (<any>this.options.xaxis).axisLabel = "Zeit [us]";
 
     }
 
@@ -153,6 +162,14 @@ class PlotBasics {
     setRangeX(from: number, to: number) {
         this.range_x.from = from;
         this.range_x.to = to;
+        this.reset_range = true;
+    }
+
+    resetView(xFrom?: number, xTo?: number): void {
+        this.range_x.from = (xFrom !== undefined) ? xFrom : this.x_min;
+        this.range_x.to = (xTo !== undefined) ? xTo : this.x_max;
+        this.range_y.from = this.y_min;
+        this.range_y.to = this.y_max;
         this.reset_range = true;
     }
 
@@ -372,6 +389,10 @@ class PlotBasics {
 
     redrawSeries(series: jquery.flot.dataSeries[], range_x: jquery.flot.range, callback: () => void): void {
         if (series.length === 0) {
+            if (this.plot) {
+                this.plot.setData([]);
+                this.plot.draw();
+            }
             callback();
             return;
         }

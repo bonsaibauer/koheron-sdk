@@ -45,8 +45,12 @@ module address_counter #
         wen_reg <= trig_detected;
         count <= 0;
       end else begin
-	count <= count + 1;
+        count <= count + 1;
+        // Keep BRAM write enabled during the whole capture window.
+        wen_reg <= trig_detected;
       end
+    end else begin
+      wen_reg <= 0;
     end
   end
 

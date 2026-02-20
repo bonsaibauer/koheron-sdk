@@ -177,6 +177,10 @@ input[type="radio"] {
   height: 500px;
 }
 
+.plot-panel .panel-body {
+  padding: 10px;
+}
+
 legend {
   font-size: 87.5%;
   font-weight: bold;

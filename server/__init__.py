@@ -106,9 +106,9 @@ def render_template(template_filename, output_filename, drivers):
     with open(output_filename, 'w') as output:
         output.write(get_template(os.path.basename(template_filename)).render(drivers=drivers, json=get_json(drivers)))
 
-def render_driver(driver, output_filename_hpp):
-    output_filename_split = os.path.splitext(output_filename_hpp)
-    assert(output_filename_split[1] == '.hpp')
+def render_driver(driver, output_filename):
+    output_filename_split = os.path.splitext(output_filename)
+    assert(output_filename_split[1] in ['.hpp', '.cpp'])
     for extension in ['.cpp', '.hpp']:
         with open(output_filename_split[0] + extension, 'w') as output:
             output.write(get_template('interface_driver' + extension).render(driver=driver))
