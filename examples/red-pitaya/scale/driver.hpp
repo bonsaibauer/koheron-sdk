@@ -68,7 +68,7 @@ class AdcDacBram
             if (function == 0) {
                 // Original BRAM ramp behaviour
                 val2 = static_cast<int32_t>((2 * phase - 1) * dac_resolution / 2.1);
-                uint32_t val = val2 % (dac_resolution - 1);
+                uint32_t val = static_cast<uint32_t>(val2) & 0x3FFF;
                 data[i] = val + (val << 16);
                 continue;
             }
@@ -145,6 +145,32 @@ class AdcDacBram
 	
         return decimated_data;
     }
+
+    std::vector<float>& get_decimated_dac_data(uint32_t channel) {
+        auto arr = dac_map.read_array<uint32_t, dac_size>();
+        decimated_dac_data.resize(0);
+        decimated_dac_data.reserve(arr.size());
+
+        if (channel == 0) {
+            for (uint32_t value : arr) {
+                int32_t s = static_cast<int32_t>(value & 0x3FFF);
+                if ((s & 0x2000) != 0) {
+                    s -= 0x4000;
+                }
+                decimated_dac_data.push_back(static_cast<float>(s) / 819.2f);
+            }
+        } else {
+            for (uint32_t value : arr) {
+                int32_t s = static_cast<int32_t>((value >> 16) & 0x3FFF);
+                if ((s & 0x2000) != 0) {
+                    s -= 0x4000;
+                }
+                decimated_dac_data.push_back(static_cast<float>(s) / 819.2f);
+            }
+        }
+
+        return decimated_dac_data;
+    }
     
     std::string get_config_as_text() const {
         double f=current_frequency;
@@ -185,6 +211,7 @@ class AdcDacBram
     Memory<mem::adc>& adc_map;
     Memory<mem::dac>& dac_map;
     std::vector<float> decimated_data;
+    std::vector<float> decimated_dac_data;
     std::vector<uint32_t> adc_snapshot;
     std::vector<uint32_t> dac_snapshot;
     uint32_t current_function;

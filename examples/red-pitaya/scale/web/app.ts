@@ -22,8 +22,6 @@ class App {
     private rmsOut1El: HTMLElement;
     private rmsOut2El: HTMLElement;
 
-    private lastOut0 = 0;
-    private lastOut1 = 0;
     private readonly sampleRateHz = 125000000;
     private lastPlotRangeUs: jquery.flot.range = {from: 0, to: 0};
 
@@ -180,61 +178,54 @@ class App {
     }
 
     private updateDiagnosticsPlot(): void {
-        this.connector.getAdcSnapshot((adcRaw) => {
-            this.connector.getDacSnapshot((dacRaw) => {
-                const in1Counts = this.extractChannelCounts(adcRaw, false, true);
-                const in2Counts = this.extractChannelCounts(adcRaw, true, true);
-                const out1Counts = this.extractChannelCounts(dacRaw, false, false);
-                const out2Counts = this.extractChannelCounts(dacRaw, true, false);
+        this.connector.getDecimatedDataChannel(0, (in1) => {
+            this.connector.getDecimatedDataChannel(1, (in2) => {
+                this.connector.getDecimatedDacDataChannel(0, (out1) => {
+                    this.connector.getDecimatedDacDataChannel(1, (out2) => {
+                        const in1Counts = in1.map(v => Math.round(v * 819.2));
+                        const in2Counts = in2.map(v => Math.round(v * 819.2));
+                        const weightSeries = this.countsToKg(in1Counts);
+                        const calibrationSeries = this.countsToCalibration(in1Counts);
 
-                const in1 = this.countsToVolt(in1Counts);
-                const in2 = this.countsToVolt(in2Counts);
-                const out1 = this.countsToVolt(out1Counts);
-                const out2 = this.countsToVolt(out2Counts);
+                        const range: jquery.flot.range = {
+                            from: 0,
+                            to: this.sampleIndexToMicroseconds(Math.max(1, in1.length - 1))
+                        };
+                        this.lastPlotRangeUs = range;
 
-                const weightSeries = this.countsToKg(in1Counts);
-                const calibrationSeries = this.countsToCalibration(in1Counts);
+                        const allSeries: {[key: string]: jquery.flot.dataSeries} = {
+                            in1: { label: 'IN1', data: this.toPlotData(in1), color: '#1f77b4' },
+                            in2: { label: 'IN2', data: this.toPlotData(in2), color: '#ff7f0e' },
+                            out1: { label: 'OUT1', data: this.toPlotData(out1), color: '#2ca02c' },
+                            out2: { label: 'OUT2', data: this.toPlotData(out2), color: '#d62728' },
+                            weight: { label: 'Weight (kg)', data: this.toPlotData(weightSeries), color: '#9467bd' },
+                            calibration: { label: 'Kalibrierung', data: this.toPlotData(calibrationSeries), color: '#8c564b' }
+                        };
 
-                const range: jquery.flot.range = {
-                    from: 0,
-                    to: this.sampleIndexToMicroseconds(Math.max(1, in1.length - 1))
-                };
-                this.lastPlotRangeUs = range;
+                        const series: jquery.flot.dataSeries[] = [];
+                        for (const key in allSeries) {
+                            if (this.curveVisible[key]) {
+                                series.push(allSeries[key]);
+                            }
+                        }
 
-                const allSeries: {[key: string]: jquery.flot.dataSeries} = {
-                    in1: { label: 'IN1', data: this.toPlotData(in1), color: '#1f77b4' },
-                    in2: { label: 'IN2', data: this.toPlotData(in2), color: '#ff7f0e' },
-                    out1: { label: 'OUT1', data: this.toPlotData(out1), color: '#2ca02c' },
-                    out2: { label: 'OUT2', data: this.toPlotData(out2), color: '#d62728' },
-                    weight: { label: 'Weight (kg)', data: this.toPlotData(weightSeries), color: '#9467bd' },
-                    calibration: { label: 'Kalibrierung', data: this.toPlotData(calibrationSeries), color: '#8c564b' }
-                };
+                        this.plotBasics.redrawSeries(series, range, () => {
+                            requestAnimationFrame(() => this.updateDiagnosticsPlot());
+                        });
 
-                const series: jquery.flot.dataSeries[] = [];
-                for (const key in allSeries) {
-                    if (this.curveVisible[key]) {
-                        series.push(allSeries[key]);
-                    }
-                }
+                        if (in1.length > 0 && out1.length > 0) {
+                            this.adc0ValueEl.innerText = in1Counts[in1Counts.length - 1].toString();
+                            this.adc1ValueEl.innerText = in2Counts[in2Counts.length - 1].toString();
+                            this.dac0ValueEl.innerText = out1[out1.length - 1].toFixed(3);
+                            this.dac1ValueEl.innerText = out2[out2.length - 1].toFixed(3);
 
-                this.plotBasics.redrawSeries(series, range, () => {
-                    requestAnimationFrame(() => this.updateDiagnosticsPlot());
+                            this.rmsIn1El.innerText = this.computeRms(in1).toFixed(3);
+                            this.rmsIn2El.innerText = this.computeRms(in2).toFixed(3);
+                            this.rmsOut1El.innerText = this.computeRms(out1).toFixed(3);
+                            this.rmsOut2El.innerText = this.computeRms(out2).toFixed(3);
+                        }
+                    });
                 });
-
-                if (in1.length > 0) {
-                    this.lastOut0 = out1[out1.length - 1];
-                    this.lastOut1 = out2[out2.length - 1];
-
-                    this.adc0ValueEl.innerText = in1Counts[in1Counts.length - 1].toString();
-                    this.adc1ValueEl.innerText = in2Counts[in2Counts.length - 1].toString();
-                    this.dac0ValueEl.innerText = out1[out1.length - 1].toFixed(3);
-                    this.dac1ValueEl.innerText = out2[out2.length - 1].toFixed(3);
-
-                    this.rmsIn1El.innerText = this.computeRms(in1).toFixed(3);
-                    this.rmsIn2El.innerText = this.computeRms(in2).toFixed(3);
-                    this.rmsOut1El.innerText = this.computeRms(out1).toFixed(3);
-                    this.rmsOut2El.innerText = this.computeRms(out2).toFixed(3);
-                }
             });
         });
     }
@@ -248,35 +239,6 @@ class App {
                 this.updateScaleLoop();
             }, 100);
         });
-    }
-
-    private extractChannelCounts(raw: Uint32Array, upperWord: boolean, isOffsetBinary: boolean): number[] {
-        const data = new Array<number>(raw.length);
-
-        for (let i = 0; i < raw.length; i++) {
-            const sample = upperWord ? ((raw[i] >> 16) & 0x3FFF) : (raw[i] & 0x3FFF);
-            data[i] = isOffsetBinary ? this.offsetBinary14ToSigned(sample) : this.toSigned14(sample);
-        }
-
-        return data;
-    }
-
-    private toSigned14(value14: number): number {
-        let value = value14 & 0x3FFF;
-        if ((value & 0x2000) !== 0) {
-            value -= 0x4000;
-        }
-        return value;
-    }
-
-    // ADC data is offset-binary in this design (0..16383 maps to -8192..+8191).
-    private offsetBinary14ToSigned(value14: number): number {
-        const value = value14 & 0x3FFF;
-        return ((value - 8192) & 0x3FFF) - 8192;
-    }
-
-    private countsToVolt(values: number[]): number[] {
-        return values.map(v => v / 819.2);
     }
 
     private countsToKg(values: number[]): number[] {

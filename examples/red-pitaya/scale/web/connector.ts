@@ -48,6 +48,20 @@ class Connector {
         });
     }
 
+    getDecimatedDataChannel(channel: number, callback: (values: number[]) => void): void {
+        this.client.readFloat32Vector(
+            Command(this.driver.id, this.cmds['get_decimated_data'], channel),
+            (array: Float32Array) => callback(Array.prototype.slice.call(array))
+        );
+    }
+
+    getDecimatedDacDataChannel(channel: number, callback: (values: number[]) => void): void {
+        this.client.readFloat32Vector(
+            Command(this.driver.id, this.cmds['get_decimated_dac_data'], channel),
+            (array: Float32Array) => callback(Array.prototype.slice.call(array))
+        );
+    }
+
     getAdcRawData(nAvg: number, callback: (adc0: number, adc1: number) => void): void {
         this.client.readTuple(
             Command(this.driver.id, this.cmds['get_adc_raw_data'], nAvg), 'ii',
