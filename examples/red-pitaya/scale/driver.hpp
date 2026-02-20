@@ -49,36 +49,41 @@ class AdcDacBram
     void set_dac_function(uint32_t function,double f) {
         std::array<uint32_t, dac_size> data;
         constexpr double pi = 3.14159265358979323846;
-        const double min_freq = fs / static_cast<double>(dac_size);
-        const double frequency = std::max(min_freq, std::min(f, fs / 2.0));
-        const uint32_t waveform = function % 3;
-
-        current_function = waveform;
+        const double frequency = std::max(1.0, std::min(f, fs / 2.0));
+        double T = 1 / frequency;
+        double Tmax = (dac_size - 1) / fs;
+        current_function = function;
         current_frequency = frequency;
 
-        const double phase_increment = frequency / fs;
-        uint32_t len = static_cast<uint32_t>(std::floor(fs / frequency));
-        len = std::max<uint32_t>(2, std::min<uint32_t>(len, dac_size));
+        uint32_t len = static_cast<uint32_t>(std::floor(Tmax / T) * fs / frequency);
+        len = std::max(uint32_t(2), std::min(len, dac_size));
         current_waveform_len = len;
+
         ctl.write<reg::trig>(((len - 1) << 1) + (1 & ctl.read<reg::trig>()));
 
         for (uint32_t i = 0; i < data.size(); i++) {
-            const double phase = std::fmod(i * phase_increment, 1.0);
-            double y = 0.0;
+            const double phase = std::fmod(frequency * i / fs, 1.0);
+            int32_t val2 = 0;
 
-            if (waveform == 0) {
-                y = std::sin(2.0 * pi * phase);
-            } else if (waveform == 1) {
-                y = 2.0 * phase - 1.0;
-            } else {
-                y = 2.0 * std::abs(2.0 * phase - 1.0) - 1.0;
+            if (function == 0) {
+                // Original BRAM ramp behaviour
+                val2 = static_cast<int32_t>((2 * phase - 1) * dac_resolution / 2.1);
+                uint32_t val = static_cast<uint32_t>(val2 % (dac_resolution - 1));
+                data[i] = val + (val << 16);
+                continue;
             }
 
-            const int32_t val = static_cast<int32_t>(std::llround(y * (dac_resolution / 2.2)));
-            const uint32_t packed = static_cast<uint32_t>(std::max(-8192, std::min(8191, val)) & 0x3FFF);
-            data[i] = packed + (packed << 16);
-        }
+            if (function == 1) {
+                val2 = static_cast<int32_t>(std::sin(2.0 * pi * phase) * dac_resolution / 2.1);
+            } else if (function == 2) {
+                val2 = static_cast<int32_t>((2 * phase - 1) * dac_resolution / 2.1);
+            } else {
+                val2 = static_cast<int32_t>((2 * std::fabs(2 * phase - 1) - 1) * dac_resolution / 2.1);
+            }
 
+            uint32_t val = static_cast<uint32_t>(val2) & 0x3FFF;
+            data[i] = val + (val << 16);
+        }
         dac_map.write_array(data);
     }
 
@@ -147,11 +152,13 @@ class AdcDacBram
         double Tmax=(dac_size-1)/fs;
 
         std::ostringstream oss;
-        const char* function_name = "Sinus (0)";
+        const char* function_name = "BRAM-Rampe (0)";
         if (current_function == 1) {
-            function_name = "Saegezahn (1)";
+            function_name = "Sinus (1)";
         } else if (current_function == 2) {
-            function_name = "Dreieck (2)";
+            function_name = "Saegezahn (2)";
+        } else if (current_function == 3) {
+            function_name = "Dreieck (3)";
         }
 
         oss << "--- Aktuelle DAC-Konfiguration ---\n";

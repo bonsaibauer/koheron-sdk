@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-  <title>Koheron | Scale</title>
+  <title>Koheron | Scale Diagnose</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="author" content="Koheron">
   <meta charset="utf-8">
@@ -38,20 +38,37 @@
       </div>
 
       <div class="col-md-4">
-        <section>
-          <div class="crossed">
-            <span>ADC-DAC BRAM Tools</span>
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Signalquelle</span></div>
+          <div class="form-group">
+            <label for="signal-mode">Mode</label>
+            <select id="signal-mode" class="form-control">
+              <option value="0">BRAM Ramp (Original)</option>
+              <option value="1">Sinus</option>
+              <option value="2">Saegezahn</option>
+              <option value="3">Dreieck</option>
+            </select>
           </div>
-          <label for="signal-type">Signaltyp</label>
-          <select id="signal-type" class="form-control">
-            <option value="0">Sinus</option>
-            <option value="1">Saegezahn</option>
-            <option value="2">Dreieck</option>
-          </select>
-
-          <label for="slider1">f (Hz)</label>
+          <label for="slider1">f (Hz): <strong id="freq-value">10000</strong></label>
           <input type="range" id="slider1" min="8000" max="100000" value="10000">
-          <div style="margin-top: 10px;">Aktiv: <strong id="signal-label">Sinus</strong></div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Kurven</span></div>
+          <div><label><input type="checkbox" id="curve-in1"> IN1</label></div>
+          <div><label><input type="checkbox" id="curve-in2"> IN2</label></div>
+          <div><label><input type="checkbox" id="curve-out1"> OUT1</label></div>
+          <div><label><input type="checkbox" id="curve-out2"> OUT2</label></div>
+          <div><label><input type="checkbox" id="curve-weight"> Weight (kg)</label></div>
+          <div><label><input type="checkbox" id="curve-calibration"> Kalibrierung</label></div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px;">
+          <div class="crossed"><span>RMS</span></div>
+          <div>RMS IN1: <strong id="rms-in1">0</strong> V</div>
+          <div>RMS IN2: <strong id="rms-in2">0</strong> V</div>
+          <div>RMS OUT1: <strong id="rms-out1">0</strong> V</div>
+          <div>RMS OUT2: <strong id="rms-out2">0</strong> V</div>
         </section>
       </div>
     </div>
@@ -76,15 +93,10 @@
             </div>
 
             <hr>
-            <div>IN1 (ADC0, Live): <strong id="adc0-live">0</strong></div>
-            <div>IN2 (ADC1, Live): <strong id="adc1-live">0</strong></div>
-            <div>OUT1 (DAC0, Live): <strong id="dac0-live">0</strong></div>
-            <div>OUT2 (DAC1, Live): <strong id="dac1-live">0</strong></div>
-            <hr>
-            <div>IN1 (ADC0, Waage): <strong id="adc0-scale">0</strong></div>
-            <div>IN2 (ADC1, Waage): <strong id="adc1-scale">0</strong></div>
-            <div>OUT1 (DAC0, Waage): <strong id="dac0-scale">0</strong></div>
-            <div>OUT2 (DAC1, Waage): <strong id="dac1-scale">0</strong></div>
+            <div>IN1 (ADC0): <strong id="adc0-value">0</strong></div>
+            <div>IN2 (ADC1): <strong id="adc1-value">0</strong></div>
+            <div>OUT1 (DAC0): <strong id="dac0-value">0</strong></div>
+            <div>OUT2 (DAC1): <strong id="dac1-value">0</strong></div>
           </div>
         </div>
       </div>
