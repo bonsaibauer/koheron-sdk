@@ -21,6 +21,8 @@ class App {
     private rmsIn2El: HTMLElement;
     private rmsOut1El: HTMLElement;
     private rmsOut2El: HTMLElement;
+    private out1Cache: number[] = [];
+    private out2Cache: number[] = [];
 
     private readonly sampleRateHz = 125000000;
     private lastPlotRangeUs: jquery.flot.range = {from: 0, to: 0};
@@ -30,8 +32,7 @@ class App {
         in2: true,
         out1: true,
         out2: true,
-        weight: false,
-        calibration: false
+        weight: false
     };
 
     constructor(window: Window, document: Document, ip: string, plot_placeholder: JQuery) {
@@ -79,7 +80,6 @@ class App {
         this.bindCurveToggle(document, 'curve-out1', 'out1');
         this.bindCurveToggle(document, 'curve-out2', 'out2');
         this.bindCurveToggle(document, 'curve-weight', 'weight');
-        this.bindCurveToggle(document, 'curve-calibration', 'calibration');
 
         applySignal();
     }
@@ -123,7 +123,6 @@ class App {
         if (label === 'OUT1') return 'out1';
         if (label === 'OUT2') return 'out2';
         if (label === 'Weight (kg)') return 'weight';
-        if (label === 'Kalibrierung') return 'calibration';
         return null;
     }
 
@@ -133,8 +132,7 @@ class App {
             in2: 'curve-in2',
             out1: 'curve-out1',
             out2: 'curve-out2',
-            weight: 'curve-weight',
-            calibration: 'curve-calibration'
+            weight: 'curve-weight'
         };
 
         const elementId = elementMap[key];
@@ -180,50 +178,61 @@ class App {
     private updateDiagnosticsPlot(): void {
         this.connector.getDecimatedDataChannel(0, (in1) => {
             this.connector.getDecimatedDataChannel(1, (in2) => {
-                this.connector.getDecimatedDacDataChannel(0, (out1) => {
-                    this.connector.getDecimatedDacDataChannel(1, (out2) => {
-                        const in1Counts = in1.map(v => Math.round(v * 819.2));
-                        const in2Counts = in2.map(v => Math.round(v * 819.2));
-                        const weightSeries = this.countsToKg(in1Counts);
-                        const calibrationSeries = this.countsToCalibration(in1Counts);
+                const out1 = this.out1Cache;
+                const out2 = this.out2Cache;
+                const in1Counts = in1.map(v => Math.round(v * 819.2));
+                const in2Counts = in2.map(v => Math.round(v * 819.2));
+                const weightSeries = this.countsToKg(in1Counts);
 
-                        const range: jquery.flot.range = {
-                            from: 0,
-                            to: this.sampleIndexToMicroseconds(Math.max(1, in1.length - 1))
-                        };
-                        this.lastPlotRangeUs = range;
+                const range: jquery.flot.range = {
+                    from: 0,
+                    to: this.sampleIndexToMicroseconds(Math.max(1, in1.length - 1))
+                };
+                this.lastPlotRangeUs = range;
 
-                        const allSeries: {[key: string]: jquery.flot.dataSeries} = {
-                            in1: { label: 'IN1', data: this.toPlotData(in1), color: '#1f77b4' },
-                            in2: { label: 'IN2', data: this.toPlotData(in2), color: '#ff7f0e' },
-                            out1: { label: 'OUT1', data: this.toPlotData(out1), color: '#2ca02c' },
-                            out2: { label: 'OUT2', data: this.toPlotData(out2), color: '#d62728' },
-                            weight: { label: 'Weight (kg)', data: this.toPlotData(weightSeries), color: '#9467bd' },
-                            calibration: { label: 'Kalibrierung', data: this.toPlotData(calibrationSeries), color: '#8c564b' }
-                        };
+                const allSeries: {[key: string]: jquery.flot.dataSeries} = {
+                    in1: { label: 'IN1', data: this.toPlotData(in1), color: '#1f77b4' },
+                    in2: { label: 'IN2', data: this.toPlotData(in2), color: '#ff7f0e' },
+                    out1: { label: 'OUT1', data: this.toPlotData(out1), color: '#2ca02c' },
+                    out2: { label: 'OUT2', data: this.toPlotData(out2), color: '#d62728' },
+                    weight: { label: 'Weight (kg)', data: this.toPlotData(weightSeries), color: '#9467bd' }
+                };
 
-                        const series: jquery.flot.dataSeries[] = [];
-                        for (const key in allSeries) {
-                            if (this.curveVisible[key]) {
-                                series.push(allSeries[key]);
-                            }
-                        }
+                const series: jquery.flot.dataSeries[] = [];
+                for (const key in allSeries) {
+                    if (this.curveVisible[key]) {
+                        series.push(allSeries[key]);
+                    }
+                }
 
-                        this.plotBasics.redrawSeries(series, range, () => {
-                            requestAnimationFrame(() => this.updateDiagnosticsPlot());
-                        });
+                this.plotBasics.redrawSeries(series, range, () => {
+                    requestAnimationFrame(() => this.updateDiagnosticsPlot());
+                });
 
-                        if (in1.length > 0 && out1.length > 0) {
-                            this.adc0ValueEl.innerText = in1Counts[in1Counts.length - 1].toString();
-                            this.adc1ValueEl.innerText = in2Counts[in2Counts.length - 1].toString();
-                            this.dac0ValueEl.innerText = out1[out1.length - 1].toFixed(3);
-                            this.dac1ValueEl.innerText = out2[out2.length - 1].toFixed(3);
+                if (in1.length > 0) {
+                    this.adc0ValueEl.innerText = in1Counts[in1Counts.length - 1].toString();
+                    this.adc1ValueEl.innerText = in2Counts[in2Counts.length - 1].toString();
+                    this.rmsIn1El.innerText = this.computeRms(in1).toFixed(3);
+                    this.rmsIn2El.innerText = this.computeRms(in2).toFixed(3);
+                }
 
-                            this.rmsIn1El.innerText = this.computeRms(in1).toFixed(3);
-                            this.rmsIn2El.innerText = this.computeRms(in2).toFixed(3);
-                            this.rmsOut1El.innerText = this.computeRms(out1).toFixed(3);
-                            this.rmsOut2El.innerText = this.computeRms(out2).toFixed(3);
-                        }
+                if (out1.length > 0 && out2.length > 0) {
+                    this.dac0ValueEl.innerText = out1[out1.length - 1].toFixed(3);
+                    this.dac1ValueEl.innerText = out2[out2.length - 1].toFixed(3);
+                    this.rmsOut1El.innerText = this.computeRms(out1).toFixed(3);
+                    this.rmsOut2El.innerText = this.computeRms(out2).toFixed(3);
+                } else {
+                    this.dac0ValueEl.innerText = 'n/a';
+                    this.dac1ValueEl.innerText = 'n/a';
+                    this.rmsOut1El.innerText = 'n/a';
+                    this.rmsOut2El.innerText = 'n/a';
+                }
+
+                // Refresh DAC caches independently so plot/UI keeps running even if DAC command lags.
+                this.connector.getDecimatedDacDataChannel(0, (newOut1) => {
+                    this.connector.getDecimatedDacDataChannel(1, (newOut2) => {
+                        this.out1Cache = newOut1;
+                        this.out2Cache = newOut2;
                     });
                 });
             });
@@ -243,10 +252,6 @@ class App {
 
     private countsToKg(values: number[]): number[] {
         return values.map(v => (v - this.tareOffset) * this.calibrationFactor);
-    }
-
-    private countsToCalibration(values: number[]): number[] {
-        return values.map(v => v * this.calibrationFactor);
     }
 
     private computeRms(values: number[]): number {
