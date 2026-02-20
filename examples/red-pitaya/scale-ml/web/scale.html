@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Koheron | Scale Diagnose</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="author" content="Koheron">
+  <meta charset="utf-8">
+
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <script type="text/javascript" src="html-imports.min.js"></script>
+
+  <link rel="shortcut icon" href="kbird.ico">
+  <link rel="stylesheet" type="text/css" href="bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="_koheron.css">
+  <link rel="stylesheet" type="text/css" href="main.css">
+
+  <script type="text/javascript" src="jquery.min.js"></script>
+  <script type="text/javascript" src="bootstrap.min.js"></script>
+
+  <link rel="import" href="navigation.html" data-parent="navigation">
+  <link rel="import" href="plot-basics.html" data-parent="plot-basics">
+</head>
+
+<body>
+
+  <div id="navigation"></div>
+
+  <div class="container-fluid" id="main">
+
+    <div class="row">
+      <div class="col-md-8">
+        <section class="panel panel-default plot-panel">
+          <div class="panel-heading">
+            <strong>Diagnose Plot</strong>
+          </div>
+          <div class="panel-body">
+            <div id="plot-placeholder" class="plot-placeholder"></div>
+            <div id="plot-basics"></div>
+          </div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Ansicht</span></div>
+          <button id="btn-plot-reset-view" class="btn btn-primary btn-block">Standardansicht</button>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Scale</span></div>
+          <div style="font-size: 3.2em; font-weight: 700; margin-bottom: 8px;">
+            <span id="weight-value">0.000</span> <span style="font-size: 0.45em;">kg</span>
+          </div>
+          <button id="btn-tare" class="btn btn-warning btn-block">Tara (Null setzen)</button>
+          <div style="margin-top: 14px;">
+            <div class="form-group">
+              <label for="input-calibration">Kalibrierungs-Faktor (kg pro ADC-Schritt)</label>
+              <input type="number" id="input-calibration" class="form-control" value="0.0005" step="0.0001">
+            </div>
+            <button id="btn-save-scale" class="btn btn-success btn-block">Kalibrierung übernehmen</button>
+          </div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>ML Training</span></div>
+          <div class="form-group">
+            <label for="input-ml-real-weight">Reales Gewicht (kg)</label>
+            <input type="number" id="input-ml-real-weight" class="form-control" step="0.001" min="0" value="1.000">
+          </div>
+          <button id="btn-ml-measure-add" class="btn btn-primary btn-block">Messung durchführen & Wert speichern</button>
+          <div style="margin-top:8px;">Gemessener Wert: <strong id="ml-last-measured-weight">-</strong> kg</div>
+          <div>ADC Rohwert: <strong id="ml-last-adc">-</strong></div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>ML Daten (Gespeicherte Werte)</span></div>
+          <div style="max-height:220px; overflow:auto;">
+            <table class="table table-condensed table-striped" style="margin-bottom:0;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Real (kg)</th>
+                  <th>Messung (kg)</th>
+                  <th>ADC</th>
+                  <th>Fehler (kg)</th>
+                </tr>
+              </thead>
+              <tbody id="ml-samples-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Reset Werte</span></div>
+          <button id="btn-ml-reset-values" class="btn btn-danger btn-block">Alle ML-Werte löschen</button>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Empfohlenes Kalibrier-Ergebnis</span></div>
+          <div>Kalibrierfaktor (kg/ADC): <strong id="ml-recommended-factor">-</strong></div>
+          <div>Offset (kg): <strong id="ml-recommended-offset">-</strong></div>
+          <div>MAE (kg): <strong id="ml-recommended-mae">-</strong></div>
+          <div>RMSE (kg): <strong id="ml-recommended-rmse">-</strong></div>
+          <button id="btn-ml-apply-recommended" class="btn btn-success btn-block" style="margin-top:10px;">Empfohlenen Faktor übernehmen</button>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>ML Plot & Messungsdetails</span></div>
+          <div class="form-group">
+            <label for="ml-sample-select">Messwert auswählen</label>
+            <select id="ml-sample-select" class="form-control">
+              <option value="">Keine Messung ausgewählt</option>
+            </select>
+          </div>
+          <div id="ml-plot-placeholder" style="height:220px; border:1px solid #ddd; margin-bottom:10px;"></div>
+          <div id="ml-selected-details">Keine Messung ausgewählt.</div>
+        </section>
+      </div>
+
+      <div class="col-md-4">
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Signalquelle</span></div>
+          <div class="form-group">
+            <label for="signal-mode">Mode</label>
+            <select id="signal-mode" class="form-control">
+              <option value="0">BRAM Ramp (Original)</option>
+              <option value="1">Sinus</option>
+              <option value="2">Saegezahn</option>
+              <option value="3">Dreieck</option>
+            </select>
+          </div>
+          <label for="slider1">f (Hz): <strong id="freq-value">10000</strong></label>
+          <input type="range" id="slider1" min="8000" max="100000" value="10000">
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Kurven</span></div>
+          <div><label><input type="checkbox" id="curve-in1"> IN1</label></div>
+          <div><label><input type="checkbox" id="curve-in2"> IN2</label></div>
+          <div><label><input type="checkbox" id="curve-out1"> OUT1</label></div>
+          <div><label><input type="checkbox" id="curve-out2"> OUT2</label></div>
+          <div><label><input type="checkbox" id="curve-weight"> Weight (kg)</label></div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>RMS</span></div>
+          <div>RMS IN1: <strong id="rms-in1">0</strong> V</div>
+          <div>RMS IN2: <strong id="rms-in2">0</strong> V</div>
+          <div>RMS OUT1: <strong id="rms-out1">0</strong> V</div>
+          <div>RMS OUT2: <strong id="rms-out2">0</strong> V</div>
+        </section>
+
+        <section class="panel panel-default" style="padding:12px;">
+          <div class="crossed"><span>ADC / DAC</span></div>
+          <div>IN1 (ADC0): <strong id="adc0-value">0</strong></div>
+          <div>IN2 (ADC1): <strong id="adc1-value">0</strong></div>
+          <div>OUT1 (DAC0): <strong id="dac0-value">0</strong></div>
+          <div>OUT2 (DAC1): <strong id="dac1-value">0</strong></div>
+        </section>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+
+  <script language="javascript" type="text/javascript" src="jquery.flot.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.resize.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.selection.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.time.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.axislabels.js"></script>
+
+</body>
+
+</html>

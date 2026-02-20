@@ -34,8 +34,8 @@ class AdcDacBram
     }
     
     void trigger_acquisition() {
-        // Toggle trigger bit to generate a deterministic edge for the FPGA counter.
-        ctl.write<reg::trig>(ctl.read<reg::trig>() ^ 0x1);
+        ctl.set_bit<reg::trig, 0>();
+        ctl.clear_bit<reg::trig, 0>();
     }
 
     uint32_t get_dac_size() {
