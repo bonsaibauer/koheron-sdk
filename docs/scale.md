@@ -1,89 +1,85 @@
-# Scale Instrument
+# scale
 
-Dieses Dokument beschreibt das Instrument `scale` (`examples/red-pitaya/scale`) im aktuellen Zustand.
+## Zweck
+`scale` ist ein Red-Pitaya-Instrument fuer Signaldiagnose und einfache Waagen-Funktion.
+Es kombiniert:
+- DAC-Signalgenerator (`Sinus`, `Saegezahn`, `Dreieck`, `BRAM Ramp`)
+- ADC/DAC-Plot in Echtzeit
+- RMS- und Momentanwert-Anzeigen
+- Tara + Kalibrierfaktor fuer Gewichtsanzeige
 
-## Ueberblick
+Pfad: `examples/red-pitaya/scale`
 
-`scale` ist ein Diagnose- und Waage-Instrument fuer Red Pitaya mit:
-- Signalgenerator (BRAM-Rampe, Sinus, Saegezahn, Dreieck)
-- Live-Plot fuer IN/OUT/Weight
-- Gewichtsberechnung mit Tara und Kalibrierfaktor
-- RMS- und Momentanwert-Anzeige fuer IN/OUT
-- Linker Navigation und responsivem Hauptbereich
+## Aufbau
+### 1. FPGA/Driver
+- `examples/red-pitaya/scale/block_design.tcl`: Topologie (ADC, DAC, BRAM, AXI)
+- `examples/red-pitaya/scale/address_counter_v1_0/address_counter.v`: Capture-Adressierung
+- `examples/red-pitaya/scale/driver.hpp`: Server-Driver `AdcDacBram`
 
-Relevante Dateien:
-- FPGA/Driver: `examples/red-pitaya/scale/driver.hpp`
-- Web App: `examples/red-pitaya/scale/web/app.ts`
-- Web Connector: `examples/red-pitaya/scale/web/connector.ts`
-- UI Layout: `examples/red-pitaya/scale/web/index.html`, `examples/red-pitaya/scale/web/scale.html`
-- Globale Navigation/Layout: `web/navigation.html`, `web/main.css`, `web/navigation.ts`
+### 2. Server/API
+Wichtige Driver-Methoden:
+- `set_dac_function(function, f)`
+- `get_adc_snapshot()`
+- `get_dac_snapshot()`
+- `get_adc_raw_data(n_avg)`
+- `get_decimated_data(channel)`
+- `get_decimated_dac_data(channel)`
 
-## Hauptfunktionen
+### 3. Web-UI
+- `examples/red-pitaya/scale/web/index.html`
+- `examples/red-pitaya/scale/web/scale.html`
+- `examples/red-pitaya/scale/web/app.ts`
+- `examples/red-pitaya/scale/web/connector.ts`
+- `examples/red-pitaya/scale/web/plot-basics.ts`
 
-## 1) Signalgenerator
-- Auswahl ueber UI: `signal-mode` (0..3)
-- Frequenz ueber Slider `slider1`
-- Aufruf: `set_dac_function(function, freq)`
-- Waveform wird im Driver in DAC-BRAM erzeugt.
+## Datenfluss
+1. UI setzt Wellenform/Frequenz -> `set_dac_function`
+2. Driver schreibt DAC-Waveform in DAC-BRAM
+3. ADC erfasst Eingangssignal in ADC-BRAM (triggered capture)
+4. UI liest Snapshots und rendert Kurven
+5. Gewichtsanzeige nutzt `get_adc_raw_data` (Mittelung)
 
-## 2) Plot
-- Kurven: `IN1`, `IN2`, `OUT1`, `OUT2`, `Weight (kg)`
-- Kurven sind ueber Checkboxen und Legend-Klick ein/ausblendbar.
-- `Standardansicht` setzt die Plotansicht zurueck.
-- Plot-Refresh laeuft kontinuierlich und bleibt responsiv.
+## Anzeige-Logik
+- X-Achse: `Zeit [us]`
+- Y-Achse: `Spannung [V]` (skalierte Amplitude)
+- `OUT1/OUT2` sind DAC-Datenpfad-Werte
+- `IN1/IN2` sind ADC-Messwerte
 
-## 3) Scale-Funktionen
-- `Tara`: setzt den Nullpunkt aus gemittelten ADC-Werten.
-- Kalibrierfaktor: `kg pro ADC-Schritt`.
-- Gewicht: `(adc0 - tareOffset) * calibrationFactor`.
+Wichtig:
+- Ohne physische Verkabelung gibt es kein internes OUT->IN-Loopback.
+- Fuer Vergleich muss z. B. `OUT2 -> IN1` extern verbunden sein.
 
-## 4) Rechte Messwertanzeige
-- Momentanwerte: `ADC0`, `ADC1`, `DAC0`, `DAC1`
-- RMS-Werte: `RMS IN1`, `RMS IN2`, `RMS OUT1`, `RMS OUT2`
+## Bedienung
+- `Signalquelle`: Form + Frequenz
+- `Kurven`: Ein/Aus pro Signal (Checkbox + Legendenklick)
+- `Standardansicht`: setzt Plot auf Standardfenster
+- `RMS`: Effektivwerte pro Kanal
+- `ADC/DAC`: Momentanwerte
+- `Scale`: Tara + Kalibrierung
 
-## 5) Layout
-- Linke Spalte: Plot, `Standardansicht`, `Scale`-Panel.
-- Rechte Spalte: Signalquelle, Kurven, RMS, ADC/DAC.
-- `Scale`-Panel steht direkt unter `Standardansicht` mit gleicher Kastenbreite.
-
-## Datenpfade
-
-IN-Daten:
-- Quelle: `get_decimated_data(channel)`
-- Bereitstellung als serverseitig dekodierte Float-Werte.
-
-OUT-Daten:
-- Quelle: `get_decimated_dac_data(channel)`
-- Bereitstellung als serverseitig dekodierte Float-Werte.
-
-Zusatzdaten:
-- Tara/Weight-Anzeige nutzt `get_adc_raw_data(nAvg)`.
-
-## Driver API (AdcDacBram)
-
-Wichtige Kommandos:
-- `set_dac_function(uint32_t function, double f)`
-- `get_decimated_data(uint32_t channel)`
-- `get_decimated_dac_data(uint32_t channel)`
-- `get_adc_raw_data(uint32_t n_avg)`
-
-## Build und Deployment
-
-Lokaler Build:
+## Build und Run
+Build:
 ```bash
-make CONFIG=examples/red-pitaya/scale/config.yml all
+make CONFIG=examples/red-pitaya/scale/config.yml
 ```
 
-Auf Board laden/starten:
+Deploy/Run:
 ```bash
-make CONFIG=examples/red-pitaya/scale/config.yml HOST=<BOARD-IP> run
+make CONFIG=examples/red-pitaya/scale/config.yml HOST=<RP-IP> run
 ```
 
-Empfehlung:
-- Nach Deploy Browser hart neu laden (Cache leeren), damit aktuelles `app.js` aktiv ist.
+Artefakt:
+- `tmp/examples/red-pitaya/scale/scale.zip`
 
-## Betriebs-Hinweise
+## Typische Probleme
+1. `IN1/IN2` bleiben 0
+- Capture/Trigger-Pfad nicht aktiv oder altes Bitstream/Server laeuft noch.
+- Neu bauen + deployen.
 
-- Ohne passendes Eingangssignal/Loopback kann IN wie Rauschen aussehen.
-- Bei niedriger Frequenz ist im sichtbaren Fenster ggf. nur ein Teil der Periode sichtbar.
-- Fuer schnelle Sichtpruefung eignen sich hoehere Frequenzen (z. B. 50-100 kHz).
+2. IN sieht wie Rauschen aus trotz Kabel
+- Falsche Verkabelung/GND fehlt.
+- Dekodierungsthema (ADC Offset-Binary vs DAC Two's-Complement).
+
+3. OUT und IN nicht identisch
+- OUT-Plot ist DAC-Datenpfad, IN ist reale ADC-Messung.
+- Kleine Abweichungen/Offset/Rauschen sind normal.
