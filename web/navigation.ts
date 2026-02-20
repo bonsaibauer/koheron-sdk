@@ -14,6 +14,7 @@ class Navigation {
     openNavigation(): void {
         this.navigationDiv.style.width = "100px";
         this.mainDiv.style.marginLeft = "100px";
+        this.mainDiv.style.width = "calc(100% - 100px)";
         this.collapseBtn.innerHTML = "&#60;";
         this.collapseBtn.value = "close";
         this.navigationLinksDiv.style.display = "block";
@@ -22,6 +23,7 @@ class Navigation {
     closeNavigation(): void {
         this.navigationDiv.style.width = "30px";
         this.mainDiv.style.marginLeft = "30px";
+        this.mainDiv.style.width = "calc(100% - 30px)";
         this.collapseBtn.innerHTML = "&#62;";
         this.collapseBtn.value = "open";
         this.navigationLinksDiv.style.display = "none";

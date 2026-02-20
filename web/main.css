@@ -164,6 +164,8 @@ button[disabled] {
 #main {
   margin-left: 100px;
   padding: 10px;
+  width: calc(100% - 100px);
+  box-sizing: border-box;
 }
 
 input[type="radio"] {

@@ -1,83 +1,71 @@
 # Scale Instrument
 
-Dieses Dokument beschreibt das Instrument `scale` (`examples/red-pitaya/scale`) und die aktuellen Aenderungen an der Datenaufbereitung/Decoder-Logik.
+Dieses Dokument beschreibt das Instrument `scale` (`examples/red-pitaya/scale`) im aktuellen Zustand.
 
 ## Ueberblick
 
 `scale` ist ein Diagnose- und Waage-Instrument fuer Red Pitaya mit:
 - Signalgenerator (BRAM-Rampe, Sinus, Saegezahn, Dreieck)
-- Live-Plot fuer IN/OUT-Signale
-- Gewichtsberechnung mit Tara und Kalibrierung
-- RMS- und Momentanwert-Anzeige fuer Kanaele
+- Live-Plot fuer IN/OUT/Weight
+- Gewichtsberechnung mit Tara und Kalibrierfaktor
+- RMS- und Momentanwert-Anzeige fuer IN/OUT
+- Linker Navigation und responsivem Hauptbereich
 
 Relevante Dateien:
 - FPGA/Driver: `examples/red-pitaya/scale/driver.hpp`
 - Web App: `examples/red-pitaya/scale/web/app.ts`
 - Web Connector: `examples/red-pitaya/scale/web/connector.ts`
 - UI Layout: `examples/red-pitaya/scale/web/index.html`, `examples/red-pitaya/scale/web/scale.html`
+- Globale Navigation/Layout: `web/navigation.html`, `web/main.css`, `web/navigation.ts`
 
 ## Hauptfunktionen
 
 ## 1) Signalgenerator
 - Auswahl ueber UI: `signal-mode` (0..3)
 - Frequenz ueber Slider `slider1`
-- Frontend ruft `set_dac_function(function, freq)` auf
-- Backend erzeugt die Waveform in BRAM (`driver.hpp`)
+- Aufruf: `set_dac_function(function, freq)`
+- Waveform wird im Driver in DAC-BRAM erzeugt.
 
 ## 2) Plot
-- IN1/IN2 werden laufend aktualisiert
-- OUT1/OUT2 werden ebenfalls geplottet
-- Kurven lassen sich via Checkbox und Legend-Klick ein/ausblenden
-- `Standardansicht` setzt Zoom/Range zurueck
+- Kurven: `IN1`, `IN2`, `OUT1`, `OUT2`, `Weight (kg)`
+- Kurven sind ueber Checkboxen und Legend-Klick ein/ausblendbar.
+- `Standardansicht` setzt die Plotansicht zurueck.
+- Plot-Refresh laeuft kontinuierlich und bleibt responsiv.
 
 ## 3) Scale-Funktionen
-- `Tara`: setzt den Nullpunkt aus gemittelten ADC-Werten
-- Kalibrierfaktor: `kg pro ADC-Schritt`
-- Gewicht: aus ADC0 und Kalibrierung berechnet
+- `Tara`: setzt den Nullpunkt aus gemittelten ADC-Werten.
+- Kalibrierfaktor: `kg pro ADC-Schritt`.
+- Gewicht: `(adc0 - tareOffset) * calibrationFactor`.
 
 ## 4) Rechte Messwertanzeige
-- ADC0/ADC1 Momentanwerte
-- DAC0/DAC1 Momentanwerte
-- RMS fuer IN1/IN2/OUT1/OUT2
+- Momentanwerte: `ADC0`, `ADC1`, `DAC0`, `DAC1`
+- RMS-Werte: `RMS IN1`, `RMS IN2`, `RMS OUT1`, `RMS OUT2`
 
-## Decoder-/Datenpfad-Aenderungen
+## 5) Layout
+- Linke Spalte: Plot, `Standardansicht`, `Scale`-Panel.
+- Rechte Spalte: Signalquelle, Kurven, RMS, ADC/DAC.
+- `Scale`-Panel steht direkt unter `Standardansicht` mit gleicher Kastenbreite.
 
-Ziel der Aenderung: den selbstgebauten Frontend-Raw-Decoder fuer Plotdaten vermeiden und robuste, serverseitig dekodierte Datenpfade nutzen.
+## Datenpfade
 
-### Vorher
-- IN/OUT wurden im Frontend aus Raw-Snapshots dekodiert (14-bit Wortaufbereitung in TypeScript).
-- Dadurch war das Verhalten empfindlich gegen Format-/Kodierungsabweichungen.
+IN-Daten:
+- Quelle: `get_decimated_data(channel)`
+- Bereitstellung als serverseitig dekodierte Float-Werte.
 
-### Jetzt
-- IN-Daten kommen serverseitig dekodiert ueber:
-  - `get_decimated_data(channel)`
-- OUT-Daten kommen serverseitig dekodiert ueber neuen Command:
-  - `get_decimated_dac_data(channel)`
+OUT-Daten:
+- Quelle: `get_decimated_dac_data(channel)`
+- Bereitstellung als serverseitig dekodierte Float-Werte.
 
-Implementierung:
-- Neuer Driver-Command in `examples/red-pitaya/scale/driver.hpp`:
-  - `std::vector<float>& get_decimated_dac_data(uint32_t channel)`
-- Neuer Connector-Zugriff in `examples/red-pitaya/scale/web/connector.ts`:
-  - `getDecimatedDacDataChannel(channel, callback)`
-- `examples/red-pitaya/scale/web/app.ts` nutzt fuer Plot und OUT-Anzeige nur noch diese decodierten Pfade.
+Zusatzdaten:
+- Tara/Weight-Anzeige nutzt `get_adc_raw_data(nAvg)`.
 
-### Zusaetzlicher Fix
-In `driver.hpp` wurde die DAC-Rampenkodierung vereinheitlicht:
-- von modulo-basiert auf saubere 14-bit Maskierung (`& 0x3FFF`) im Rampenfall.
+## Driver API (AdcDacBram)
 
-## Wie das Instrument intern arbeitet
-
-## Abtastung/Signalfluss
-1. UI setzt Signalgenerator (`set_dac_function`)
-2. FPGA schreibt DAC-Werte in BRAM
-3. ADC wird getriggert und Daten werden gelesen
-4. Driver dekodiert Daten zu Float-Spannungen
-5. Web-App zeichnet Serien und aktualisiert Kennwerte
-
-## Gewichtsberechnung
-- Basis: ADC0 Rohwert
-- Tara: Offset-Abzug (`tareOffset`)
-- Gewicht: `(adc0 - tareOffset) * calibrationFactor`
+Wichtige Kommandos:
+- `set_dac_function(uint32_t function, double f)`
+- `get_decimated_data(uint32_t channel)`
+- `get_decimated_dac_data(uint32_t channel)`
+- `get_adc_raw_data(uint32_t n_avg)`
 
 ## Build und Deployment
 
@@ -91,9 +79,11 @@ Auf Board laden/starten:
 make CONFIG=examples/red-pitaya/scale/config.yml HOST=<BOARD-IP> run
 ```
 
-Hinweis:
-- Nach Deploy Browser hart neu laden (Cache leeren), damit neues `app.js` aktiv ist.
+Empfehlung:
+- Nach Deploy Browser hart neu laden (Cache leeren), damit aktuelles `app.js` aktiv ist.
 
-## Bekannte Hinweise
-- Wenn am ADC kein externes Rueckfuehrsignal anliegt (z. B. DAC->ADC nicht verbunden), sehen IN-Kurven wie Rauschen aus.
-- Bei niedriger Frequenz kann im sichtbaren Fenster nur ein Teil einer Periode zu sehen sein.
+## Betriebs-Hinweise
+
+- Ohne passendes Eingangssignal/Loopback kann IN wie Rauschen aussehen.
+- Bei niedriger Frequenz ist im sichtbaren Fenster ggf. nur ein Teil der Periode sichtbar.
+- Fuer schnelle Sichtpruefung eignen sich hoehere Frequenzen (z. B. 50-100 kHz).

@@ -12,6 +12,7 @@
   function openNavigation() {
     document.getElementById("navigation").style.width = "100px";
     document.getElementById("main").style.marginLeft = "100px";
+    document.getElementById("main").style.width = "calc(100% - 100px)";
     document.getElementById("collapse-btn").innerHTML = "&#60;";
     document.getElementById("collapse-btn").value = "close";
     document.getElementById("navigation-links").style.display = "block";
@@ -20,6 +21,7 @@
   function closeNavigation() {
     document.getElementById("navigation").style.width = "30px";
     document.getElementById("main").style.marginLeft = "30px";
+    document.getElementById("main").style.width = "calc(100% - 30px)";
     document.getElementById("collapse-btn").innerHTML = "&#62;";
     document.getElementById("collapse-btn").value = "open";
     document.getElementById("navigation-links").style.display = "none";
