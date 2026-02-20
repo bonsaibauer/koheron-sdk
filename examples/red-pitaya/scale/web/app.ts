@@ -23,6 +23,8 @@ class App {
     private rmsOut2El: HTMLElement;
     private out1Cache: number[] = [];
     private out2Cache: number[] = [];
+    private diagMetricSelect: HTMLSelectElement;
+    private diagMetricMode: 'minmax' | 'mean' | 'p2p' = 'p2p';
 
     private readonly sampleRateHz = 125000000;
     private lastPlotRangeUs: jquery.flot.range = {from: 0, to: 0};
@@ -157,6 +159,13 @@ class App {
         this.rmsIn2El = <HTMLElement>document.getElementById('rms-in2');
         this.rmsOut1El = <HTMLElement>document.getElementById('rms-out1');
         this.rmsOut2El = <HTMLElement>document.getElementById('rms-out2');
+        this.diagMetricSelect = <HTMLSelectElement>document.getElementById('diag-metric-select');
+        if (this.diagMetricSelect) {
+            this.diagMetricMode = <'minmax' | 'mean' | 'p2p'>this.diagMetricSelect.value;
+            this.diagMetricSelect.addEventListener('change', () => {
+                this.diagMetricMode = <'minmax' | 'mean' | 'p2p'>this.diagMetricSelect.value;
+            });
+        }
 
         const calibrationInput = <HTMLInputElement>document.getElementById('input-calibration');
         const saveScaleBtn = <HTMLButtonElement>document.getElementById('btn-save-scale');
@@ -210,15 +219,15 @@ class App {
                 });
 
                 if (in1.length > 0) {
-                    this.adc0ValueEl.innerText = in1Counts[in1Counts.length - 1].toString();
-                    this.adc1ValueEl.innerText = in2Counts[in2Counts.length - 1].toString();
+                    this.adc0ValueEl.innerText = this.computeDiagValue(in1);
+                    this.adc1ValueEl.innerText = this.computeDiagValue(in2);
                     this.rmsIn1El.innerText = this.computeRms(in1).toFixed(3);
                     this.rmsIn2El.innerText = this.computeRms(in2).toFixed(3);
                 }
 
                 if (out1.length > 0 && out2.length > 0) {
-                    this.dac0ValueEl.innerText = out1[out1.length - 1].toFixed(3);
-                    this.dac1ValueEl.innerText = out2[out2.length - 1].toFixed(3);
+                    this.dac0ValueEl.innerText = this.computeDiagValue(out1);
+                    this.dac1ValueEl.innerText = this.computeDiagValue(out2);
                     this.rmsOut1El.innerText = this.computeRms(out1).toFixed(3);
                     this.rmsOut2El.innerText = this.computeRms(out2).toFixed(3);
                 } else {
@@ -265,6 +274,33 @@ class App {
         }
 
         return Math.sqrt(sum / values.length);
+    }
+
+    private computeDiagValue(values: number[]): string {
+        if (values.length === 0) {
+            return 'n/a';
+        }
+
+        if (this.diagMetricMode === 'mean') {
+            let sum = 0;
+            for (let i = 0; i < values.length; i++) {
+                sum += values[i];
+            }
+            return (sum / values.length).toFixed(3);
+        }
+
+        let min = values[0];
+        let max = values[0];
+        for (let i = 1; i < values.length; i++) {
+            if (values[i] < min) min = values[i];
+            if (values[i] > max) max = values[i];
+        }
+
+        if (this.diagMetricMode === 'minmax') {
+            return min.toFixed(3) + ' / ' + max.toFixed(3);
+        }
+
+        return (max - min).toFixed(3);
     }
 
     private toPlotData(values: number[]): number[][] {

@@ -99,6 +99,14 @@
 
         <section class="panel panel-default" style="padding:12px;">
           <div class="crossed"><span>ADC / DAC</span></div>
+          <div class="form-group">
+            <label for="diag-metric-select">Anzeige</label>
+            <select id="diag-metric-select" class="form-control">
+              <option value="minmax">Min / Max</option>
+              <option value="mean">Mittelwert</option>
+              <option value="p2p" selected>Peak-to-Peak</option>
+            </select>
+          </div>
           <div>IN1 (ADC0): <strong id="adc0-value">0</strong></div>
           <div>IN2 (ADC1): <strong id="adc1-value">0</strong></div>
           <div>OUT1 (DAC0): <strong id="dac0-value">0</strong></div>
