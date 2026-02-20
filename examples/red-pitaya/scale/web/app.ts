@@ -1,104 +1,126 @@
 class App {
-    private adcdac: AdcDac;
+
     private imports: Imports;
+    private plotBasics: PlotBasics;
+    public connector: Connector;
+    private sw: HTMLInputElement;
+    private slider: HTMLInputElement;
+
     private tareOffset = 0;
     private calibrationFactor = 0.0005;
 
-    private adc0El: HTMLElement;
-    private adc1El: HTMLElement;
-    private adc0ScaleEl: HTMLElement;
-    private adc1ScaleEl: HTMLElement;
+    private adc0LiveEl: HTMLElement;
+    private adc1LiveEl: HTMLElement;
     private weightEl: HTMLElement;
 
-    constructor(window: Window, document: Document, ip: string) {
+    constructor(window: Window, document: Document, ip: string, plot_placeholder: JQuery) {
+
         const client = new Client(ip, 5);
 
         window.addEventListener('HTMLImportsLoaded', () => {
             client.init(() => {
                 this.imports = new Imports(document);
-                this.adcdac = new AdcDac(client);
-                this.bindUi(document);
-                this.startLiveLoop();
+                this.connector = new Connector(client);
+
+                const n_pts = 12192;
+                const x_min = 0;
+                const x_max = 62.5;
+                const y_min = -11;
+                const y_max = 11;
+
+                this.plotBasics = new PlotBasics(document, plot_placeholder, n_pts, x_min, x_max, y_min, y_max, this.connector, 'setRange', 'Datenpunkt');
+
+                const xLabelSpan = <HTMLSpanElement>document.getElementById('plot-title');
+                xLabelSpan.innerHTML = 'Zeit';
+
+                this.bindBramTools(document);
+                this.bindScaleTools(document);
+
+                this.updatePlot();
+                this.updateScaleLoop();
             });
         }, false);
+
+        this.slider = document.getElementById('slider1') as HTMLInputElement;
+        this.slider.addEventListener('input', () => {
+            if (this.sw.checked) {
+                this.connector.setFunction(1, Number(this.slider.value));
+            } else {
+                this.connector.setFunction(0, Number(this.slider.value));
+            }
+        });
 
         window.onbeforeunload = () => {
             client.exit();
         };
     }
 
-    private bindUi(document: Document): void {
-        this.adc0El = <HTMLElement>document.getElementById('adc0-live');
-        this.adc1El = <HTMLElement>document.getElementById('adc1-live');
-        this.adc0ScaleEl = <HTMLElement>document.getElementById('adc0-scale');
-        this.adc1ScaleEl = <HTMLElement>document.getElementById('adc1-scale');
+    private bindBramTools(document: Document): void {
+        this.sw = <HTMLInputElement>document.getElementById('switch1');
+        this.sw.addEventListener('change', (event) => {
+            const target = event.target as HTMLInputElement;
+            if (target.checked) {
+                this.connector.setFunction(1, Number(this.slider.value));
+            } else {
+                this.connector.setFunction(0, Number(this.slider.value));
+            }
+        });
+
+        const sw2 = <HTMLInputElement>document.getElementById('switch2');
+        sw2.addEventListener('change', (event) => {
+            const target = event.target as HTMLInputElement;
+            if (target.checked) {
+                this.connector.setChannel(1);
+            } else {
+                this.connector.setChannel(0);
+            }
+        });
+    }
+
+    private bindScaleTools(document: Document): void {
+        this.adc0LiveEl = <HTMLElement>document.getElementById('adc0-live');
+        this.adc1LiveEl = <HTMLElement>document.getElementById('adc1-live');
         this.weightEl = <HTMLElement>document.getElementById('weight-value');
 
-        const dac0Input = <HTMLInputElement>document.getElementById('dac0-input');
-        const dac1Input = <HTMLInputElement>document.getElementById('dac1-input');
-        const setDacBtn = <HTMLButtonElement>document.getElementById('btn-set-dac');
-
-        const tareBtn = <HTMLButtonElement>document.getElementById('btn-tare');
         const calibrationInput = <HTMLInputElement>document.getElementById('input-calibration');
         const saveScaleBtn = <HTMLButtonElement>document.getElementById('btn-save-scale');
+        const tareBtn = <HTMLButtonElement>document.getElementById('btn-tare');
 
         this.calibrationFactor = this.parseNumber(calibrationInput.value, this.calibrationFactor);
-
-        setDacBtn.onclick = () => {
-            const dac0 = this.parseNumber(dac0Input.value, 0);
-            const dac1 = this.parseNumber(dac1Input.value, 0);
-            this.adcdac.setDac0(dac0);
-            this.adcdac.setDac1(dac1);
-        };
-
-        tareBtn.onclick = () => {
-            this.readAverageAdc0(16, avg => {
-                this.tareOffset = avg;
-            });
-        };
 
         saveScaleBtn.onclick = () => {
             this.calibrationFactor = this.parseNumber(calibrationInput.value, this.calibrationFactor);
         };
-    }
 
-    private startLiveLoop(): void {
-        const loop = () => {
-            this.adcdac.getAdc((adc0, adc1) => {
-                this.adc0El.innerText = adc0.toString();
-                this.adc1El.innerText = adc1.toString();
-                this.adc0ScaleEl.innerText = adc0.toString();
-                this.adc1ScaleEl.innerText = adc1.toString();
-
-                const weight = (adc0 - this.tareOffset) * this.calibrationFactor;
-                this.weightEl.innerText = weight.toFixed(3);
-
-                setTimeout(loop, 100);
+        tareBtn.onclick = () => {
+            this.connector.getAdcRawData(16, (adc0, _) => {
+                this.tareOffset = adc0;
             });
         };
-
-        loop();
     }
 
-    private readAverageAdc0(samples: number, cb: (avg: number) => void): void {
-        let sum = 0;
-        let count = 0;
-
-        const sample = () => {
-            this.adcdac.getAdc((adc0, _) => {
-                sum += adc0;
-                count += 1;
-
-                if (count >= samples) {
-                    cb(Math.round(sum / count));
-                    return;
-                }
-
-                sample();
+    updatePlot(): void {
+        this.connector.getDecimatedData((plot_data: number[][], range_x: jquery.flot.range) => {
+            this.plotBasics.redrawRange(plot_data, range_x, 'Spannung', () => {
+                requestAnimationFrame(() => {
+                    this.updatePlot();
+                });
             });
-        };
+        });
+    }
 
-        sample();
+    private updateScaleLoop(): void {
+        this.connector.getAdcRawData(8, (adc0, adc1) => {
+            this.adc0LiveEl.innerText = adc0.toString();
+            this.adc1LiveEl.innerText = adc1.toString();
+
+            const weight = (adc0 - this.tareOffset) * this.calibrationFactor;
+            this.weightEl.innerText = weight.toFixed(3);
+
+            setTimeout(() => {
+                this.updateScaleLoop();
+            }, 100);
+        });
     }
 
     private parseNumber(raw: string, fallback: number): number {
@@ -108,6 +130,7 @@ class App {
         }
         return parsed;
     }
+
 }
 
-let app = new App(window, document, location.hostname);
+let app = new App(window, document, location.hostname, $('#plot-placeholder'));
