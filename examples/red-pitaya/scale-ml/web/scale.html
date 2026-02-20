@@ -31,6 +31,11 @@
 
   <div class="container-fluid" id="main">
 
+    <ul class="nav nav-tabs" style="margin-bottom:12px;">
+      <li class="active"><a href="scale.html">Scale</a></li>
+      <li><a href="ml.html">ML</a></li>
+    </ul>
+
     <div class="row">
       <div class="col-md-8">
         <section class="panel panel-default plot-panel">
@@ -61,61 +66,6 @@
             </div>
             <button id="btn-save-scale" class="btn btn-success btn-block">Kalibrierung übernehmen</button>
           </div>
-        </section>
-
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>ML Training</span></div>
-          <div class="form-group">
-            <label for="input-ml-real-weight">Reales Gewicht (kg)</label>
-            <input type="number" id="input-ml-real-weight" class="form-control" step="0.001" min="0" value="1.000">
-          </div>
-          <button id="btn-ml-measure-add" class="btn btn-primary btn-block">Messung durchführen & Wert speichern</button>
-          <div style="margin-top:8px;">Gemessener Wert: <strong id="ml-last-measured-weight">-</strong> kg</div>
-          <div>ADC Rohwert: <strong id="ml-last-adc">-</strong></div>
-        </section>
-
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>ML Daten (Gespeicherte Werte)</span></div>
-          <div style="max-height:220px; overflow:auto;">
-            <table class="table table-condensed table-striped" style="margin-bottom:0;">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Real (kg)</th>
-                  <th>Messung (kg)</th>
-                  <th>ADC</th>
-                  <th>Fehler (kg)</th>
-                </tr>
-              </thead>
-              <tbody id="ml-samples-body"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>Reset Werte</span></div>
-          <button id="btn-ml-reset-values" class="btn btn-danger btn-block">Alle ML-Werte löschen</button>
-        </section>
-
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>Empfohlenes Kalibrier-Ergebnis</span></div>
-          <div>Kalibrierfaktor (kg/ADC): <strong id="ml-recommended-factor">-</strong></div>
-          <div>Offset (kg): <strong id="ml-recommended-offset">-</strong></div>
-          <div>MAE (kg): <strong id="ml-recommended-mae">-</strong></div>
-          <div>RMSE (kg): <strong id="ml-recommended-rmse">-</strong></div>
-          <button id="btn-ml-apply-recommended" class="btn btn-success btn-block" style="margin-top:10px;">Empfohlenen Faktor übernehmen</button>
-        </section>
-
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>ML Plot & Messungsdetails</span></div>
-          <div class="form-group">
-            <label for="ml-sample-select">Messwert auswählen</label>
-            <select id="ml-sample-select" class="form-control">
-              <option value="">Keine Messung ausgewählt</option>
-            </select>
-          </div>
-          <div id="ml-plot-placeholder" style="height:220px; border:1px solid #ddd; margin-bottom:10px;"></div>
-          <div id="ml-selected-details">Keine Messung ausgewählt.</div>
         </section>
       </div>
 

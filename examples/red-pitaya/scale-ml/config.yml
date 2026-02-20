@@ -58,3 +58,4 @@ web:
   - ./web/plot-basics.html
   - ./web/index.html
   - ./web/scale.html
+  - ./web/ml.html

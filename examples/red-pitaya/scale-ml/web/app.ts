@@ -7,14 +7,30 @@ interface CalibrationSample {
     deltaCounts: number;
     tareAtMeasurement: number;
     calibrationAtMeasurement: number;
+    calibrationOffsetAtMeasurement: number;
+    modelSelectionAtMeasurement: string;
 }
 
 interface CalibrationModel {
+    key: ModelKey;
+    label: string;
+    inverse: boolean;
     factor: number;
     offset: number;
+    coefficients: number[];
+    usedSamples: number;
+    totalSamples: number;
+    maxAbsError: number;
+    r2: number;
+    referenceDeltaCounts: number;
     mae: number;
     rmse: number;
 }
+
+type ModelKey = 'linear' | 'quadratic' | 'exponential';
+type ModelSelection = ModelKey;
+type ModelCriterion = 'rmse' | 'mae' | 'maxerr' | 'r2';
+type SampleScope = 'all' | 'active_model';
 
 class App {
 
@@ -28,6 +44,8 @@ class App {
 
     private tareOffset = 0;
     private calibrationFactor = 0.0005;
+    private calibrationOffset = 0;
+    private runtimeModel: CalibrationModel | null = null;
 
     private adc0ValueEl: HTMLElement;
     private adc1ValueEl: HTMLElement;
@@ -50,12 +68,24 @@ class App {
     private mlResetValuesBtn: HTMLButtonElement;
     private mlRecommendedFactorEl: HTMLElement;
     private mlRecommendedOffsetEl: HTMLElement;
+    private mlRecommendedModelEl: HTMLElement;
+    private mlRecommendedUsedSamplesEl: HTMLElement;
     private mlRecommendedMaeEl: HTMLElement;
     private mlRecommendedRmseEl: HTMLElement;
+    private mlRecommendedMaxErrorEl: HTMLElement;
+    private mlRecommendedR2El: HTMLElement;
     private mlApplyRecommendedBtn: HTMLButtonElement;
     private mlSampleSelectEl: HTMLSelectElement;
     private mlSelectedDetailsEl: HTMLElement;
     private mlPlotPlaceholder: JQuery;
+    private mlModelSelectEl: HTMLSelectElement;
+    private mlCriterionSelectEl: HTMLSelectElement;
+    private mlSampleScopeSelectEl: HTMLSelectElement;
+    private mlOutlierSigmaInput: HTMLInputElement;
+    private mlRidgeLambdaInput: HTMLInputElement;
+    private mlReferenceDeltaInput: HTMLInputElement;
+    private mlAvgCountInput: HTMLInputElement;
+    private mlInverseModeEl: HTMLInputElement;
 
     private mlSamples: CalibrationSample[] = [];
     private mlSelectedSampleId: number | null = null;
@@ -197,13 +227,21 @@ class App {
         this.rmsOut2El = <HTMLElement>document.getElementById('rms-out2');
 
         const calibrationInput = <HTMLInputElement>document.getElementById('input-calibration');
+        const calibrationOffsetInput = <HTMLInputElement>document.getElementById('input-calibration-offset');
         const saveScaleBtn = <HTMLButtonElement>document.getElementById('btn-save-scale');
         const tareBtn = <HTMLButtonElement>document.getElementById('btn-tare');
 
         this.calibrationFactor = this.parseNumber(calibrationInput.value, this.calibrationFactor);
+        if (calibrationOffsetInput) {
+            this.calibrationOffset = this.parseNumber(calibrationOffsetInput.value, this.calibrationOffset);
+        }
 
         saveScaleBtn.onclick = () => {
             this.calibrationFactor = this.parseNumber(calibrationInput.value, this.calibrationFactor);
+            if (calibrationOffsetInput) {
+                this.calibrationOffset = this.parseNumber(calibrationOffsetInput.value, this.calibrationOffset);
+            }
+            this.runtimeModel = null;
         };
 
         tareBtn.onclick = () => {
@@ -212,20 +250,64 @@ class App {
             });
         };
 
-        this.mlRealWeightInput = <HTMLInputElement>document.getElementById('input-ml-real-weight');
-        this.mlMeasureAddBtn = <HTMLButtonElement>document.getElementById('btn-ml-measure-add');
+        const mlRealWeightInputEl = <HTMLInputElement>document.getElementById('input-ml-real-weight');
+        const mlMeasureAddBtnEl = <HTMLButtonElement>document.getElementById('btn-ml-measure-add');
+        if (!mlRealWeightInputEl || !mlMeasureAddBtnEl) {
+            return;
+        }
+
+        this.mlRealWeightInput = mlRealWeightInputEl;
+        this.mlMeasureAddBtn = mlMeasureAddBtnEl;
         this.mlLastMeasuredWeightEl = <HTMLElement>document.getElementById('ml-last-measured-weight');
         this.mlLastAdcEl = <HTMLElement>document.getElementById('ml-last-adc');
         this.mlSamplesBodyEl = <HTMLElement>document.getElementById('ml-samples-body');
         this.mlResetValuesBtn = <HTMLButtonElement>document.getElementById('btn-ml-reset-values');
         this.mlRecommendedFactorEl = <HTMLElement>document.getElementById('ml-recommended-factor');
         this.mlRecommendedOffsetEl = <HTMLElement>document.getElementById('ml-recommended-offset');
+        this.mlRecommendedModelEl = <HTMLElement>document.getElementById('ml-recommended-model');
+        this.mlRecommendedUsedSamplesEl = <HTMLElement>document.getElementById('ml-recommended-used-samples');
         this.mlRecommendedMaeEl = <HTMLElement>document.getElementById('ml-recommended-mae');
         this.mlRecommendedRmseEl = <HTMLElement>document.getElementById('ml-recommended-rmse');
+        this.mlRecommendedMaxErrorEl = <HTMLElement>document.getElementById('ml-recommended-max-error');
+        this.mlRecommendedR2El = <HTMLElement>document.getElementById('ml-recommended-r2');
         this.mlApplyRecommendedBtn = <HTMLButtonElement>document.getElementById('btn-ml-apply-recommended');
         this.mlSampleSelectEl = <HTMLSelectElement>document.getElementById('ml-sample-select');
         this.mlSelectedDetailsEl = <HTMLElement>document.getElementById('ml-selected-details');
         this.mlPlotPlaceholder = $('#ml-plot-placeholder');
+        this.mlModelSelectEl = <HTMLSelectElement>document.getElementById('ml-model-select');
+        this.mlCriterionSelectEl = <HTMLSelectElement>document.getElementById('ml-criterion-select');
+        this.mlSampleScopeSelectEl = <HTMLSelectElement>document.getElementById('ml-fit-sample-scope');
+        this.mlOutlierSigmaInput = <HTMLInputElement>document.getElementById('ml-outlier-sigma');
+        this.mlRidgeLambdaInput = <HTMLInputElement>document.getElementById('ml-ridge-lambda');
+        this.mlReferenceDeltaInput = <HTMLInputElement>document.getElementById('ml-factor-ref-delta');
+        this.mlAvgCountInput = <HTMLInputElement>document.getElementById('ml-avg-count');
+        this.mlInverseModeEl = <HTMLInputElement>document.getElementById('ml-inverse-mode');
+
+        if (!this.mlLastMeasuredWeightEl || !this.mlLastAdcEl || !this.mlSamplesBodyEl || !this.mlResetValuesBtn ||
+            !this.mlRecommendedFactorEl || !this.mlRecommendedOffsetEl || !this.mlRecommendedModelEl ||
+            !this.mlRecommendedUsedSamplesEl || !this.mlRecommendedMaeEl || !this.mlRecommendedRmseEl ||
+            !this.mlRecommendedMaxErrorEl || !this.mlRecommendedR2El || !this.mlApplyRecommendedBtn ||
+            !this.mlSampleSelectEl || !this.mlSelectedDetailsEl || this.mlPlotPlaceholder.length === 0 ||
+            !this.mlModelSelectEl || !this.mlCriterionSelectEl || !this.mlSampleScopeSelectEl ||
+            !this.mlOutlierSigmaInput || !this.mlRidgeLambdaInput || !this.mlReferenceDeltaInput ||
+            !this.mlAvgCountInput || !this.mlInverseModeEl) {
+            return;
+        }
+
+        const retrain = () => {
+            this.recomputeMlModel();
+            this.renderMlTable();
+            this.renderMlDetails();
+            this.renderMlPlot();
+        };
+
+        this.mlModelSelectEl.onchange = retrain;
+        this.mlCriterionSelectEl.onchange = retrain;
+        this.mlSampleScopeSelectEl.onchange = retrain;
+        this.mlOutlierSigmaInput.onchange = retrain;
+        this.mlRidgeLambdaInput.onchange = retrain;
+        this.mlReferenceDeltaInput.onchange = retrain;
+        this.mlInverseModeEl.onchange = retrain;
 
         this.mlMeasureAddBtn.onclick = () => {
             const realWeight = this.parseNumber(this.mlRealWeightInput.value, NaN);
@@ -233,9 +315,10 @@ class App {
                 return;
             }
 
-            this.connector.getAdcRawData(16, (adc0, _) => {
+            const avgCount = this.getMlAverageCount();
+            this.connector.getAdcRawData(avgCount, (adc0, _) => {
                 const deltaCounts = adc0 - this.tareOffset;
-                const measuredWeight = deltaCounts * this.calibrationFactor;
+                const measuredWeight = this.predictWeightFromRuntime(deltaCounts);
 
                 const sample: CalibrationSample = {
                     id: this.nextSampleId++,
@@ -245,7 +328,9 @@ class App {
                     adcRaw: adc0,
                     deltaCounts,
                     tareAtMeasurement: this.tareOffset,
-                    calibrationAtMeasurement: this.calibrationFactor
+                    calibrationAtMeasurement: this.calibrationFactor,
+                    calibrationOffsetAtMeasurement: this.calibrationOffset,
+                    modelSelectionAtMeasurement: this.getCurrentModelTag()
                 };
 
                 this.mlSamples.push(sample);
@@ -283,7 +368,12 @@ class App {
                 return;
             }
             this.calibrationFactor = this.mlModel.factor;
+            this.calibrationOffset = this.mlModel.offset;
+            this.runtimeModel = this.cloneModel(this.mlModel);
             calibrationInput.value = this.calibrationFactor.toFixed(8);
+            if (calibrationOffsetInput) {
+                calibrationOffsetInput.value = this.calibrationOffset.toFixed(8);
+            }
         };
 
         this.mlSampleSelectEl.onchange = () => {
@@ -302,86 +392,175 @@ class App {
     }
 
     private recomputeMlModel(): void {
-        this.mlModel = this.trainLinearModel(this.mlSamples);
+        this.mlModel = this.trainSelectedModel();
         this.renderMlModel();
     }
 
-    private trainLinearModel(samples: CalibrationSample[]): CalibrationModel | null {
-        if (samples.length === 0) {
+    private trainSelectedModel(): CalibrationModel | null {
+        const selection = this.getSelectedModelSelection();
+        const criterion = this.getSelectedCriterion();
+        const inverse = this.isInverseModeEnabled();
+        const trainingSamples = this.getTrainingSamples(selection);
+
+        if (trainingSamples.length === 0) {
             return null;
         }
 
-        if (samples.length === 1) {
-            const x = samples[0].deltaCounts;
-            const y = samples[0].realWeightKg;
-            const factor = Math.abs(x) > 1e-12 ? y / x : this.calibrationFactor;
-            const offset = 0;
-            return this.evaluateModel(samples, factor, offset);
+        const candidates: CalibrationModel[] = [];
+        const modelKeys: ModelKey[] = [selection];
+
+        for (let i = 0; i < modelKeys.length; i++) {
+            const candidate = this.fitModel(modelKeys[i], trainingSamples, this.mlSamples.length, inverse);
+            if (candidate) {
+                candidates.push(candidate);
+            }
         }
 
-        let sumX = 0;
-        let sumY = 0;
-        let sumXX = 0;
-        let sumXY = 0;
-
-        for (let i = 0; i < samples.length; i++) {
-            const x = samples[i].deltaCounts;
-            const y = samples[i].realWeightKg;
-            sumX += x;
-            sumY += y;
-            sumXX += x * x;
-            sumXY += x * y;
+        if (candidates.length === 0) {
+            return null;
         }
 
-        const n = samples.length;
-        const denom = n * sumXX - sumX * sumX;
-
-        let factor = this.calibrationFactor;
-        let offset = 0;
-
-        if (Math.abs(denom) > 1e-12) {
-            factor = (n * sumXY - sumX * sumY) / denom;
-            offset = (sumY - factor * sumX) / n;
-        } else {
-            const refX = samples[n - 1].deltaCounts;
-            const refY = samples[n - 1].realWeightKg;
-            factor = Math.abs(refX) > 1e-12 ? refY / refX : this.calibrationFactor;
-            offset = 0;
+        let best = candidates[0];
+        for (let i = 1; i < candidates.length; i++) {
+            if (this.isBetterModel(candidates[i], best, criterion)) {
+                best = candidates[i];
+            }
         }
 
-        return this.evaluateModel(samples, factor, offset);
+        return best;
     }
 
-    private evaluateModel(samples: CalibrationSample[], factor: number, offset: number): CalibrationModel {
+    private fitModel(modelKey: ModelKey, samples: CalibrationSample[], totalSamples: number, inverse: boolean): CalibrationModel | null {
+        const coeffs = this.solveCoefficients(modelKey, samples, inverse);
+        if (!coeffs) {
+            return null;
+        }
+
+        const sigma = this.getOutlierSigma();
+        let usedSamples = samples.slice();
+        if (sigma > 0 && samples.length >= 4) {
+            const filtered = this.filterOutliers(modelKey, coeffs, samples, sigma, inverse);
+            if (filtered.length >= this.minSamplesForModel(modelKey)) {
+                usedSamples = filtered;
+                const refit = this.solveCoefficients(modelKey, usedSamples, inverse);
+                if (refit) {
+                    return this.evaluateModel(modelKey, refit, usedSamples, totalSamples, inverse);
+                }
+            }
+        }
+
+        return this.evaluateModel(modelKey, coeffs, usedSamples, totalSamples, inverse);
+    }
+
+    private solveCoefficients(modelKey: ModelKey, samples: CalibrationSample[], inverse: boolean): number[] | null {
+        if (modelKey === 'exponential') {
+            return this.fitNonlinearModel(modelKey, samples, inverse);
+        }
+
+        const design = this.getModelDesign(modelKey);
+        if (samples.length < design.length) {
+            return null;
+        }
+
+        const lambda = this.getRidgeLambda();
+        const normal: number[][] = [];
+        const rhs: number[] = [];
+
+        for (let i = 0; i < design.length; i++) {
+            normal.push(new Array<number>(design.length).fill(0));
+            rhs.push(0);
+        }
+
+        for (let n = 0; n < samples.length; n++) {
+            const x = this.transformInput(samples[n].deltaCounts, inverse);
+            const row = this.buildFeatures(x, modelKey);
+            const y = samples[n].realWeightKg - this.calibrationOffset;
+
+            for (let i = 0; i < design.length; i++) {
+                rhs[i] += row[i] * y;
+                for (let j = 0; j < design.length; j++) {
+                    normal[i][j] += row[i] * row[j];
+                }
+            }
+        }
+
+        for (let i = 0; i < design.length; i++) {
+            normal[i][i] += lambda;
+        }
+
+        return this.solveLinearSystem(normal, rhs);
+    }
+
+    private evaluateModel(modelKey: ModelKey, coeffs: number[], samples: CalibrationSample[], totalSamples: number, inverse: boolean): CalibrationModel {
         let mae = 0;
         let mse = 0;
+        let maxAbsError = 0;
+        let sumY = 0;
 
         for (let i = 0; i < samples.length; i++) {
-            const predicted = factor * samples[i].deltaCounts + offset;
+            sumY += samples[i].realWeightKg;
+        }
+
+        const yMean = samples.length > 0 ? sumY / samples.length : 0;
+        let tss = 0;
+
+        for (let i = 0; i < samples.length; i++) {
+            const predicted = this.predictByModel(modelKey, coeffs, samples[i].deltaCounts, inverse);
             const err = predicted - samples[i].realWeightKg;
-            mae += Math.abs(err);
+            const absErr = Math.abs(err);
+            mae += absErr;
             mse += err * err;
+            maxAbsError = Math.max(maxAbsError, absErr);
+
+            const dy = samples[i].realWeightKg - yMean;
+            tss += dy * dy;
         }
 
         mae /= samples.length;
         const rmse = Math.sqrt(mse / samples.length);
+        const r2 = tss > 1e-12 ? (1 - (mse / tss)) : (mse <= 1e-12 ? 1 : 0);
+        const ref = this.getReferenceDeltaCounts();
+        const factor = this.localFactorAt(modelKey, coeffs, ref, inverse);
+        const offset = this.calibrationOffset;
 
-        return { factor, offset, mae, rmse };
+        return {
+            key: modelKey,
+            label: this.getModelLabel(modelKey) + (inverse ? ' + Inverse' : ''),
+            inverse,
+            factor,
+            offset,
+            coefficients: coeffs.slice(),
+            usedSamples: samples.length,
+            totalSamples,
+            maxAbsError,
+            r2,
+            referenceDeltaCounts: ref,
+            mae,
+            rmse
+        };
     }
 
     private renderMlModel(): void {
         if (!this.mlModel) {
+            this.mlRecommendedModelEl.innerText = '-';
+            this.mlRecommendedUsedSamplesEl.innerText = '-';
             this.mlRecommendedFactorEl.innerText = '-';
             this.mlRecommendedOffsetEl.innerText = '-';
             this.mlRecommendedMaeEl.innerText = '-';
             this.mlRecommendedRmseEl.innerText = '-';
+            this.mlRecommendedMaxErrorEl.innerText = '-';
+            this.mlRecommendedR2El.innerText = '-';
             return;
         }
 
+        this.mlRecommendedModelEl.innerText = this.mlModel.label;
+        this.mlRecommendedUsedSamplesEl.innerText = this.mlModel.usedSamples.toString() + ' / ' + this.mlModel.totalSamples.toString();
         this.mlRecommendedFactorEl.innerText = this.mlModel.factor.toFixed(8);
         this.mlRecommendedOffsetEl.innerText = this.mlModel.offset.toFixed(6);
         this.mlRecommendedMaeEl.innerText = this.mlModel.mae.toFixed(6);
         this.mlRecommendedRmseEl.innerText = this.mlModel.rmse.toFixed(6);
+        this.mlRecommendedMaxErrorEl.innerText = this.mlModel.maxAbsError.toFixed(6);
+        this.mlRecommendedR2El.innerText = this.mlModel.r2.toFixed(6);
     }
 
     private renderMlTable(): void {
@@ -389,7 +568,10 @@ class App {
 
         for (let i = 0; i < this.mlSamples.length; i++) {
             const sample = this.mlSamples[i];
-            const error = sample.measuredWeightKg - sample.realWeightKg;
+            const activePredicted = this.mlModel
+                ? this.predictByModel(this.mlModel.key, this.mlModel.coefficients, sample.deltaCounts, this.mlModel.inverse)
+                : sample.measuredWeightKg;
+            const error = activePredicted - sample.realWeightKg;
 
             const tr = document.createElement('tr');
             tr.dataset.sampleId = sample.id.toString();
@@ -398,7 +580,10 @@ class App {
                 '<td>' + (i + 1).toString() + '</td>' +
                 '<td>' + sample.realWeightKg.toFixed(4) + '</td>' +
                 '<td>' + sample.measuredWeightKg.toFixed(4) + '</td>' +
+                '<td>' + activePredicted.toFixed(4) + '</td>' +
                 '<td>' + sample.adcRaw.toString() + '</td>' +
+                '<td>' + sample.deltaCounts.toString() + '</td>' +
+                '<td>' + this.getModelDisplayForSelection(sample.modelSelectionAtMeasurement) + '</td>' +
                 '<td>' + error.toFixed(4) + '</td>';
 
             tr.onclick = () => {
@@ -436,7 +621,7 @@ class App {
             const sample = this.mlSamples[i];
             const opt = document.createElement('option');
             opt.value = sample.id.toString();
-            opt.text = '#' + (i + 1).toString() + ' | Real ' + sample.realWeightKg.toFixed(3) + ' kg | ADC ' + sample.adcRaw.toString();
+            opt.text = '#' + (i + 1).toString() + ' | Real ' + sample.realWeightKg.toFixed(3) + ' kg | dADC ' + sample.deltaCounts.toString();
             this.mlSampleSelectEl.appendChild(opt);
         }
 
@@ -459,16 +644,20 @@ class App {
             return;
         }
 
-        const predicted = this.mlModel ? (this.mlModel.factor * sample.deltaCounts + this.mlModel.offset) : NaN;
+        const predicted = this.mlModel
+            ? this.predictByModel(this.mlModel.key, this.mlModel.coefficients, sample.deltaCounts, this.mlModel.inverse)
+            : NaN;
         const lines: string[] = [
             'Messung #' + sample.id.toString(),
             'Zeit: ' + sample.timestamp,
             'Real: ' + sample.realWeightKg.toFixed(6) + ' kg',
-            'Gemessen (akt. Faktor): ' + sample.measuredWeightKg.toFixed(6) + ' kg',
+            'Gemessen bei Aufnahme: ' + sample.measuredWeightKg.toFixed(6) + ' kg',
             'ADC Rohwert: ' + sample.adcRaw.toString(),
             'ADC Delta (zu Tara): ' + sample.deltaCounts.toString(),
             'Tara bei Messung: ' + sample.tareAtMeasurement.toString(),
-            'Kalibrierfaktor bei Messung: ' + sample.calibrationAtMeasurement.toFixed(8)
+            'Kalibrierfaktor bei Messung: ' + sample.calibrationAtMeasurement.toFixed(8),
+            'Kalibrieroffset bei Messung: ' + sample.calibrationOffsetAtMeasurement.toFixed(8),
+            'Modellwahl bei Messung: ' + this.getModelDisplayForSelection(sample.modelSelectionAtMeasurement)
         ];
 
         if (isFinite(predicted)) {
@@ -480,14 +669,18 @@ class App {
     }
 
     private renderMlPlot(): void {
-        const points: number[][] = [];
+        const groupedBySelection: {[key: string]: number[][]} = {};
         let xMin = 0;
         let xMax = 0;
 
         for (let i = 0; i < this.mlSamples.length; i++) {
             const x = this.mlSamples[i].deltaCounts;
             const y = this.mlSamples[i].realWeightKg;
-            points.push([x, y]);
+            const selection = this.mlSamples[i].modelSelectionAtMeasurement;
+            if (!groupedBySelection[selection]) {
+                groupedBySelection[selection] = [];
+            }
+            groupedBySelection[selection].push([x, y]);
 
             if (i === 0) {
                 xMin = x;
@@ -498,15 +691,19 @@ class App {
             }
         }
 
-        const series: jquery.flot.dataSeries[] = [
-            {
-                label: 'Messpunkte',
-                data: points,
+        const series: jquery.flot.dataSeries[] = [];
+        const selectionKeys = Object.keys(groupedBySelection);
+        const palette = ['#1f77b4', '#2ca02c', '#ff7f0e', '#8c564b', '#17becf', '#9467bd'];
+        for (let i = 0; i < selectionKeys.length; i++) {
+            const key = selectionKeys[i];
+            series.push({
+                label: 'Messpunkte [' + this.getModelDisplayForSelection(key) + ']',
+                data: groupedBySelection[key],
                 points: { show: true, radius: 4 },
                 lines: { show: false },
-                color: '#1f77b4'
-            }
-        ];
+                color: palette[i % palette.length]
+            });
+        }
 
         if (this.mlModel && this.mlSamples.length >= 1) {
             if (xMin === xMax) {
@@ -515,10 +712,10 @@ class App {
             }
 
             series.push({
-                label: 'ML Fit',
+                label: 'ML Fit [' + this.mlModel.label + ']',
                 data: [
-                    [xMin, this.mlModel.factor * xMin + this.mlModel.offset],
-                    [xMax, this.mlModel.factor * xMax + this.mlModel.offset]
+                    [xMin, this.predictByModel(this.mlModel.key, this.mlModel.coefficients, xMin, this.mlModel.inverse)],
+                    [xMax, this.predictByModel(this.mlModel.key, this.mlModel.coefficients, xMax, this.mlModel.inverse)]
                 ],
                 points: { show: false },
                 lines: { show: true, lineWidth: 2 },
@@ -551,6 +748,359 @@ class App {
             xaxis: {},
             yaxis: {}
         });
+    }
+
+    private getSelectedModelSelection(): ModelSelection {
+        const value = this.mlModelSelectEl ? this.mlModelSelectEl.value : 'linear';
+        if (value === 'linear' || value === 'quadratic' || value === 'exponential') {
+            return value;
+        }
+        return 'linear';
+    }
+
+    private isInverseModeEnabled(): boolean {
+        return !!(this.mlInverseModeEl && this.mlInverseModeEl.checked);
+    }
+
+    private getCurrentModelTag(): string {
+        return this.makeModelTag(this.getSelectedModelSelection(), this.isInverseModeEnabled());
+    }
+
+    private makeModelTag(selection: ModelSelection, inverse: boolean): string {
+        return selection + '|inv=' + (inverse ? '1' : '0');
+    }
+
+    private getSelectedCriterion(): ModelCriterion {
+        const value = this.mlCriterionSelectEl ? this.mlCriterionSelectEl.value : 'rmse';
+        if (value === 'rmse' || value === 'mae' || value === 'maxerr' || value === 'r2') {
+            return value;
+        }
+        return 'rmse';
+    }
+
+    private getSelectedSampleScope(): SampleScope {
+        const value = this.mlSampleScopeSelectEl ? this.mlSampleScopeSelectEl.value : 'all';
+        if (value === 'all' || value === 'active_model') {
+            return value;
+        }
+        return 'all';
+    }
+
+    private getReferenceDeltaCounts(): number {
+        return this.parseNumber(this.mlReferenceDeltaInput ? this.mlReferenceDeltaInput.value : '0', 0);
+    }
+
+    private getOutlierSigma(): number {
+        const sigma = this.parseNumber(this.mlOutlierSigmaInput ? this.mlOutlierSigmaInput.value : '0', 0);
+        return Math.max(0, sigma);
+    }
+
+    private getRidgeLambda(): number {
+        const lambda = this.parseNumber(this.mlRidgeLambdaInput ? this.mlRidgeLambdaInput.value : '0', 0);
+        return Math.max(0, lambda);
+    }
+
+    private getMlAverageCount(): number {
+        const parsed = this.parseNumber(this.mlAvgCountInput ? this.mlAvgCountInput.value : '16', 16);
+        const rounded = Math.round(parsed);
+        return Math.max(1, rounded);
+    }
+
+    private getModelLabel(key: ModelKey): string {
+        if (key === 'linear') return 'Linear';
+        if (key === 'quadratic') return 'Quadratisch';
+        if (key === 'exponential') return 'Exponentiell';
+        return key;
+    }
+
+    private getModelDisplayForSelection(selection: string): string {
+        if (selection.indexOf('|inv=') >= 0) {
+            const parts = selection.split('|inv=');
+            const base = parts[0];
+            const inv = parts[1] === '1';
+            if (base === 'linear' || base === 'quadratic' || base === 'exponential') {
+                return this.getModelLabel(base) + (inv ? ' + Inverse' : '');
+            }
+        }
+        if (selection === 'linear' || selection === 'quadratic' || selection === 'exponential') {
+            return this.getModelLabel(selection);
+        }
+        return selection;
+    }
+
+    private getTrainingSamples(selection: ModelSelection): CalibrationSample[] {
+        const scope = this.getSelectedSampleScope();
+        if (scope !== 'active_model') {
+            return this.mlSamples.slice();
+        }
+        const currentTag = this.makeModelTag(selection, this.isInverseModeEnabled());
+        return this.mlSamples.filter(sample => sample.modelSelectionAtMeasurement === currentTag);
+    }
+
+    private minSamplesForModel(modelKey: ModelKey): number {
+        return this.getModelDesign(modelKey).length;
+    }
+
+    private getModelDesign(modelKey: ModelKey): string[] {
+        if (modelKey === 'linear') return ['x'];
+        if (modelKey === 'quadratic') return ['x2', 'x'];
+        if (modelKey === 'exponential') return ['a', 'b'];
+        return ['x'];
+    }
+
+    private buildFeatures(x: number, modelKey: ModelKey): number[] {
+        if (modelKey === 'linear') return [x];
+        if (modelKey === 'quadratic') return [x * x, x];
+        return [x];
+    }
+
+    private solveLinearSystem(aIn: number[][], bIn: number[]): number[] | null {
+        const n = aIn.length;
+        const a = aIn.map(row => row.slice());
+        const b = bIn.slice();
+
+        for (let i = 0; i < n; i++) {
+            let pivot = i;
+            let pivotAbs = Math.abs(a[i][i]);
+            for (let r = i + 1; r < n; r++) {
+                const v = Math.abs(a[r][i]);
+                if (v > pivotAbs) {
+                    pivotAbs = v;
+                    pivot = r;
+                }
+            }
+
+            if (pivotAbs < 1e-12) {
+                return null;
+            }
+
+            if (pivot !== i) {
+                const tmpRow = a[i];
+                a[i] = a[pivot];
+                a[pivot] = tmpRow;
+                const tmpB = b[i];
+                b[i] = b[pivot];
+                b[pivot] = tmpB;
+            }
+
+            const diag = a[i][i];
+            for (let c = i; c < n; c++) {
+                a[i][c] /= diag;
+            }
+            b[i] /= diag;
+
+            for (let r = 0; r < n; r++) {
+                if (r === i) {
+                    continue;
+                }
+                const factor = a[r][i];
+                for (let c = i; c < n; c++) {
+                    a[r][c] -= factor * a[i][c];
+                }
+                b[r] -= factor * b[i];
+            }
+        }
+
+        return b;
+    }
+
+    private fitNonlinearModel(modelKey: ModelKey, samples: CalibrationSample[], inverse: boolean): number[] | null {
+        if (samples.length < 3) {
+            return null;
+        }
+
+        let minX = this.transformInput(samples[0].deltaCounts, inverse);
+        let maxX = this.transformInput(samples[0].deltaCounts, inverse);
+        let minY = samples[0].realWeightKg;
+        let maxY = samples[0].realWeightKg;
+        let sumY = 0;
+
+        for (let i = 0; i < samples.length; i++) {
+            const x = this.transformInput(samples[i].deltaCounts, inverse);
+            const y = samples[i].realWeightKg;
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+            sumY += y;
+        }
+
+        const spanX = Math.max(1e-6, maxX - minX);
+        const spanY = Math.max(1e-6, maxY - minY);
+        const meanY = sumY / samples.length;
+
+        let params: number[] = [Math.max(spanY, 1e-3), 1 / spanX];
+
+        let learningRate = 1e-3;
+        let bestParams = params.slice();
+        let bestLoss = this.nonlinearLoss(modelKey, bestParams, samples, inverse);
+
+        for (let iter = 0; iter < 1200; iter++) {
+            const grad = this.numericalGradient(modelKey, params, samples, inverse);
+            const candidate = params.map((p, i) => p - learningRate * grad[i]);
+            const candidateLoss = this.nonlinearLoss(modelKey, candidate, samples, inverse);
+
+            if (isFinite(candidateLoss) && candidateLoss <= bestLoss) {
+                params = candidate;
+                bestLoss = candidateLoss;
+                bestParams = candidate.slice();
+                learningRate = Math.min(1e-1, learningRate * 1.03);
+            } else {
+                learningRate *= 0.5;
+                if (learningRate < 1e-10) {
+                    break;
+                }
+            }
+        }
+
+        if (!isFinite(bestLoss)) {
+            return null;
+        }
+
+        return bestParams;
+    }
+
+    private nonlinearLoss(modelKey: ModelKey, params: number[], samples: CalibrationSample[], inverse: boolean): number {
+        let mse = 0;
+        for (let i = 0; i < samples.length; i++) {
+            const yHat = this.predictByModel(modelKey, params, samples[i].deltaCounts, inverse);
+            if (!isFinite(yHat)) {
+                return 1e30;
+            }
+            const err = yHat - samples[i].realWeightKg;
+            mse += err * err;
+        }
+        return mse / samples.length;
+    }
+
+    private numericalGradient(modelKey: ModelKey, params: number[], samples: CalibrationSample[], inverse: boolean): number[] {
+        const grad: number[] = new Array<number>(params.length).fill(0);
+        const baseLoss = this.nonlinearLoss(modelKey, params, samples, inverse);
+
+        for (let i = 0; i < params.length; i++) {
+            const step = Math.abs(params[i]) * 1e-4 + 1e-7;
+            const pPlus = params.slice();
+            const pMinus = params.slice();
+            pPlus[i] += step;
+            pMinus[i] -= step;
+
+            const lossPlus = this.nonlinearLoss(modelKey, pPlus, samples, inverse);
+            const lossMinus = this.nonlinearLoss(modelKey, pMinus, samples, inverse);
+
+            if (isFinite(lossPlus) && isFinite(lossMinus)) {
+                grad[i] = (lossPlus - lossMinus) / (2 * step);
+            } else if (isFinite(lossPlus)) {
+                grad[i] = (lossPlus - baseLoss) / step;
+            } else if (isFinite(lossMinus)) {
+                grad[i] = (baseLoss - lossMinus) / step;
+            } else {
+                grad[i] = 0;
+            }
+        }
+
+        return grad;
+    }
+
+    private filterOutliers(modelKey: ModelKey, coeffs: number[], samples: CalibrationSample[], sigma: number, inverse: boolean): CalibrationSample[] {
+        const residuals: number[] = [];
+        let mean = 0;
+        for (let i = 0; i < samples.length; i++) {
+            const err = this.predictByModel(modelKey, coeffs, samples[i].deltaCounts, inverse) - samples[i].realWeightKg;
+            residuals.push(err);
+            mean += err;
+        }
+        mean /= residuals.length;
+
+        let variance = 0;
+        for (let i = 0; i < residuals.length; i++) {
+            const d = residuals[i] - mean;
+            variance += d * d;
+        }
+        variance /= residuals.length;
+        const std = Math.sqrt(variance);
+        if (std < 1e-12) {
+            return samples.slice();
+        }
+
+        const threshold = sigma * std;
+        return samples.filter((_, idx) => Math.abs(residuals[idx] - mean) <= threshold);
+    }
+
+    private isBetterModel(candidate: CalibrationModel, current: CalibrationModel, criterion: ModelCriterion): boolean {
+        if (criterion === 'mae') {
+            return candidate.mae < current.mae;
+        }
+        if (criterion === 'maxerr') {
+            return candidate.maxAbsError < current.maxAbsError;
+        }
+        if (criterion === 'r2') {
+            return candidate.r2 > current.r2;
+        }
+        return candidate.rmse < current.rmse;
+    }
+
+    private transformInput(x: number, inverse: boolean): number {
+        if (!inverse) {
+            return x;
+        }
+        const eps = 1e-12;
+        const sign = x >= 0 ? 1 : -1;
+        return sign / (Math.abs(x) + eps);
+    }
+
+    private predictByModel(modelKey: ModelKey, coeffs: number[], x: number, inverse: boolean): number {
+        const u = this.transformInput(x, inverse);
+        if (modelKey === 'linear') {
+            return (coeffs[0] * u) + this.calibrationOffset;
+        }
+        if (modelKey === 'quadratic') {
+            return (coeffs[0] * u * u + coeffs[1] * u) + this.calibrationOffset;
+        }
+        if (modelKey === 'exponential') {
+            return (coeffs[0] * Math.exp(coeffs[1] * u)) + this.calibrationOffset;
+        }
+        return this.calibrationOffset;
+    }
+
+    private localFactorAt(modelKey: ModelKey, coeffs: number[], x: number, inverse: boolean): number {
+        if (inverse) {
+            const h = Math.max(1e-6, Math.abs(x) * 1e-3);
+            const y1 = this.predictByModel(modelKey, coeffs, x + h, true);
+            const y0 = this.predictByModel(modelKey, coeffs, x - h, true);
+            return (y1 - y0) / (2 * h);
+        }
+        if (modelKey === 'linear') {
+            return coeffs[0];
+        }
+        if (modelKey === 'exponential') {
+            return coeffs[0] * coeffs[1] * Math.exp(coeffs[1] * x);
+        }
+        return (2 * coeffs[0] * x) + coeffs[1];
+    }
+
+    private predictWeightFromRuntime(deltaCounts: number): number {
+        if (this.runtimeModel) {
+            return this.predictByModel(this.runtimeModel.key, this.runtimeModel.coefficients, deltaCounts, this.runtimeModel.inverse);
+        }
+        return deltaCounts * this.calibrationFactor + this.calibrationOffset;
+    }
+
+    private cloneModel(model: CalibrationModel): CalibrationModel {
+        return {
+            key: model.key,
+            label: model.label,
+            inverse: model.inverse,
+            factor: model.factor,
+            offset: model.offset,
+            coefficients: model.coefficients.slice(),
+            usedSamples: model.usedSamples,
+            totalSamples: model.totalSamples,
+            maxAbsError: model.maxAbsError,
+            r2: model.r2,
+            referenceDeltaCounts: model.referenceDeltaCounts,
+            mae: model.mae,
+            rmse: model.rmse
+        };
     }
 
     private updateDiagnosticsPlot(): void {
@@ -618,8 +1168,8 @@ class App {
     }
 
     private updateScaleLoop(): void {
-        this.connector.getAdcRawData(8, (adc0, _) => {
-            const weight = (adc0 - this.tareOffset) * this.calibrationFactor;
+        this.connector.getAdcRawData(this.getMlAverageCount(), (adc0, _) => {
+            const weight = this.predictWeightFromRuntime(adc0 - this.tareOffset);
             this.weightEl.innerText = weight.toFixed(3);
 
             setTimeout(() => {
@@ -629,7 +1179,7 @@ class App {
     }
 
     private countsToKg(values: number[]): number[] {
-        return values.map(v => (v - this.tareOffset) * this.calibrationFactor);
+        return values.map(v => this.predictWeightFromRuntime(v - this.tareOffset));
     }
 
     private computeRms(values: number[]): number {
