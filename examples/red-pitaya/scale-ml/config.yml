@@ -10,7 +10,7 @@ cores:
   - fpga/cores/axi_sts_register_v1_0
   - fpga/cores/edge_detector_v1_0
   - fpga/cores/comparator_v1_0
-  - ./address_counter_v1_0
+  - ../scale/address_counter_v1_0
 
 memory:
   - name: control
@@ -53,9 +53,9 @@ web:
   - web/jquery.flot.d.ts
   - ./web/app.ts
   - web/main.css
-  - ./web/connector.ts
-  - ./web/plot-basics.ts
-  - ./web/plot-basics.html
-  - ./web/index.html
-  - ./web/scale.html
+  - ../scale/web/connector.ts
+  - ../scale/web/plot-basics.ts
+  - ../scale/web/plot-basics.html
+  - ../scale/web/index.html
+  - ../scale/web/scale.html
   - ./web/ml.html

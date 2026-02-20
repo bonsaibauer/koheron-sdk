@@ -1,10 +1,15 @@
 interface CalibrationSample {
     id: number;
     timestamp: string;
-    realWeightKg: number;
-    measuredWeightKg: number;
+    realWeightG: number;
+    measuredWeightG: number;
     adcRaw: number;
     deltaCounts: number;
+    signalFeatureValue: number;
+    signalFeatureKey: string;
+    referenceCapacityPf: number;
+    predictedCapacityPf: number;
+    predictedWeightG: number;
     tareAtMeasurement: number;
     calibrationAtMeasurement: number;
     calibrationOffsetAtMeasurement: number;
@@ -86,11 +91,18 @@ class App {
     private mlReferenceDeltaInput: HTMLInputElement;
     private mlAvgCountInput: HTMLInputElement;
     private mlInverseModeEl: HTMLInputElement;
+    private mlSignalFeatureSelectEl: HTMLSelectElement;
+    private mlRefAInput: HTMLInputElement;
+    private mlRefBInput: HTMLInputElement;
+    private mlRefC0Input: HTMLInputElement;
+    private mlLiveCapacityEl: HTMLElement;
+    private mlLiveWeightFromCapacityEl: HTMLElement;
 
     private mlSamples: CalibrationSample[] = [];
     private mlSelectedSampleId: number | null = null;
     private mlModel: CalibrationModel | null = null;
     private nextSampleId = 1;
+    private mlWorkflowEnabled = false;
 
     private readonly sampleRateHz = 125000000;
     private lastPlotRangeUs: jquery.flot.range = {from: 0, to: 0};
@@ -109,6 +121,7 @@ class App {
 
         window.addEventListener('HTMLImportsLoaded', () => {
             client.init(() => {
+                this.injectInstrumentTabs(window, document);
                 this.imports = new Imports(document);
                 this.connector = new Connector(client);
 
@@ -126,6 +139,45 @@ class App {
         window.onbeforeunload = () => {
             client.exit();
         };
+    }
+
+    private injectInstrumentTabs(window: Window, document: Document): void {
+        const main = document.getElementById('main');
+        if (!main || document.getElementById('scale-ml-tabs')) {
+            return;
+        }
+
+        const pathname = (window.location.pathname || '').toLowerCase();
+        const page = pathname.substring(pathname.lastIndexOf('/') + 1);
+        const isMlPage = page === 'ml.html';
+
+        const tabs = document.createElement('ul');
+        tabs.id = 'scale-ml-tabs';
+        tabs.className = 'nav nav-tabs';
+        tabs.style.marginBottom = '12px';
+
+        const scaleTab = document.createElement('li');
+        if (!isMlPage) {
+            scaleTab.className = 'active';
+        }
+        const scaleLink = document.createElement('a');
+        scaleLink.href = 'scale.html';
+        scaleLink.textContent = 'Scale';
+        scaleTab.appendChild(scaleLink);
+
+        const mlTab = document.createElement('li');
+        if (isMlPage) {
+            mlTab.className = 'active';
+        }
+        const mlLink = document.createElement('a');
+        mlLink.href = 'ml.html';
+        mlLink.textContent = 'ML';
+        mlTab.appendChild(mlLink);
+
+        tabs.appendChild(scaleTab);
+        tabs.appendChild(mlTab);
+
+        main.insertBefore(tabs, main.firstChild);
     }
 
     private bindControls(document: Document): void {
@@ -253,6 +305,7 @@ class App {
         const mlRealWeightInputEl = <HTMLInputElement>document.getElementById('input-ml-real-weight');
         const mlMeasureAddBtnEl = <HTMLButtonElement>document.getElementById('btn-ml-measure-add');
         if (!mlRealWeightInputEl || !mlMeasureAddBtnEl) {
+            this.mlWorkflowEnabled = false;
             return;
         }
 
@@ -282,6 +335,12 @@ class App {
         this.mlReferenceDeltaInput = <HTMLInputElement>document.getElementById('ml-factor-ref-delta');
         this.mlAvgCountInput = <HTMLInputElement>document.getElementById('ml-avg-count');
         this.mlInverseModeEl = <HTMLInputElement>document.getElementById('ml-inverse-mode');
+        this.mlSignalFeatureSelectEl = <HTMLSelectElement>document.getElementById('ml-signal-feature');
+        this.mlRefAInput = <HTMLInputElement>document.getElementById('ml-ref-a');
+        this.mlRefBInput = <HTMLInputElement>document.getElementById('ml-ref-b');
+        this.mlRefC0Input = <HTMLInputElement>document.getElementById('ml-ref-c0');
+        this.mlLiveCapacityEl = <HTMLElement>document.getElementById('ml-live-capacity');
+        this.mlLiveWeightFromCapacityEl = <HTMLElement>document.getElementById('ml-live-weight-from-capacity');
 
         if (!this.mlLastMeasuredWeightEl || !this.mlLastAdcEl || !this.mlSamplesBodyEl || !this.mlResetValuesBtn ||
             !this.mlRecommendedFactorEl || !this.mlRecommendedOffsetEl || !this.mlRecommendedModelEl ||
@@ -290,9 +349,13 @@ class App {
             !this.mlSampleSelectEl || !this.mlSelectedDetailsEl || this.mlPlotPlaceholder.length === 0 ||
             !this.mlModelSelectEl || !this.mlCriterionSelectEl || !this.mlSampleScopeSelectEl ||
             !this.mlOutlierSigmaInput || !this.mlRidgeLambdaInput || !this.mlReferenceDeltaInput ||
-            !this.mlAvgCountInput || !this.mlInverseModeEl) {
+            !this.mlAvgCountInput || !this.mlInverseModeEl || !this.mlSignalFeatureSelectEl ||
+            !this.mlRefAInput || !this.mlRefBInput || !this.mlRefC0Input || !this.mlLiveCapacityEl ||
+            !this.mlLiveWeightFromCapacityEl) {
+            this.mlWorkflowEnabled = false;
             return;
         }
+        this.mlWorkflowEnabled = true;
 
         const retrain = () => {
             this.recomputeMlModel();
@@ -308,25 +371,37 @@ class App {
         this.mlRidgeLambdaInput.onchange = retrain;
         this.mlReferenceDeltaInput.onchange = retrain;
         this.mlInverseModeEl.onchange = retrain;
+        this.mlSignalFeatureSelectEl.onchange = retrain;
+        this.mlRefAInput.onchange = retrain;
+        this.mlRefBInput.onchange = retrain;
+        this.mlRefC0Input.onchange = retrain;
 
         this.mlMeasureAddBtn.onclick = () => {
-            const realWeight = this.parseNumber(this.mlRealWeightInput.value, NaN);
-            if (!isFinite(realWeight) || realWeight < 0) {
+            const realWeightG = this.parseNumber(this.mlRealWeightInput.value, NaN);
+            if (!isFinite(realWeightG) || realWeightG < 0) {
                 return;
             }
 
             const avgCount = this.getMlAverageCount();
             this.connector.getAdcRawData(avgCount, (adc0, _) => {
                 const deltaCounts = adc0 - this.tareOffset;
-                const measuredWeight = this.predictWeightFromRuntime(deltaCounts);
+                const signalFeatureValue = this.extractSignalFeatureValue(adc0, deltaCounts);
+                const referenceCapacityPf = this.capacityFromReferenceModel(realWeightG);
+                const predictedCapacityPf = this.predictCapacityFromRuntime(adc0, deltaCounts);
+                const measuredWeightG = this.weightFromReferenceCapacity(predictedCapacityPf);
 
                 const sample: CalibrationSample = {
                     id: this.nextSampleId++,
                     timestamp: new Date().toISOString(),
-                    realWeightKg: realWeight,
-                    measuredWeightKg: measuredWeight,
+                    realWeightG,
+                    measuredWeightG,
                     adcRaw: adc0,
                     deltaCounts,
+                    signalFeatureValue,
+                    signalFeatureKey: this.getSelectedSignalFeature(),
+                    referenceCapacityPf,
+                    predictedCapacityPf,
+                    predictedWeightG: measuredWeightG,
                     tareAtMeasurement: this.tareOffset,
                     calibrationAtMeasurement: this.calibrationFactor,
                     calibrationOffsetAtMeasurement: this.calibrationOffset,
@@ -336,8 +411,10 @@ class App {
                 this.mlSamples.push(sample);
                 this.mlSelectedSampleId = sample.id;
 
-                this.mlLastMeasuredWeightEl.innerText = measuredWeight.toFixed(6);
+                this.mlLastMeasuredWeightEl.innerText = measuredWeightG.toFixed(3);
                 this.mlLastAdcEl.innerText = adc0.toString();
+                this.mlLiveCapacityEl.innerText = predictedCapacityPf.toFixed(4);
+                this.mlLiveWeightFromCapacityEl.innerText = measuredWeightG.toFixed(3);
 
                 this.recomputeMlModel();
                 this.renderMlTable();
@@ -355,6 +432,8 @@ class App {
 
             this.mlLastMeasuredWeightEl.innerText = '-';
             this.mlLastAdcEl.innerText = '-';
+            this.mlLiveCapacityEl.innerText = '-';
+            this.mlLiveWeightFromCapacityEl.innerText = '-';
 
             this.renderMlTable();
             this.renderMlSampleSelect();
@@ -367,13 +446,7 @@ class App {
             if (!this.mlModel) {
                 return;
             }
-            this.calibrationFactor = this.mlModel.factor;
-            this.calibrationOffset = this.mlModel.offset;
             this.runtimeModel = this.cloneModel(this.mlModel);
-            calibrationInput.value = this.calibrationFactor.toFixed(8);
-            if (calibrationOffsetInput) {
-                calibrationOffsetInput.value = this.calibrationOffset.toFixed(8);
-            }
         };
 
         this.mlSampleSelectEl.onchange = () => {
@@ -472,9 +545,9 @@ class App {
         }
 
         for (let n = 0; n < samples.length; n++) {
-            const x = this.transformInput(samples[n].deltaCounts, inverse);
+            const x = this.transformInput(samples[n].signalFeatureValue, inverse);
             const row = this.buildFeatures(x, modelKey);
-            const y = samples[n].realWeightKg - this.calibrationOffset;
+            const y = samples[n].referenceCapacityPf;
 
             for (let i = 0; i < design.length; i++) {
                 rhs[i] += row[i] * y;
@@ -498,21 +571,21 @@ class App {
         let sumY = 0;
 
         for (let i = 0; i < samples.length; i++) {
-            sumY += samples[i].realWeightKg;
+            sumY += samples[i].referenceCapacityPf;
         }
 
         const yMean = samples.length > 0 ? sumY / samples.length : 0;
         let tss = 0;
 
         for (let i = 0; i < samples.length; i++) {
-            const predicted = this.predictByModel(modelKey, coeffs, samples[i].deltaCounts, inverse);
-            const err = predicted - samples[i].realWeightKg;
+            const predicted = this.predictByModel(modelKey, coeffs, samples[i].signalFeatureValue, inverse);
+            const err = predicted - samples[i].referenceCapacityPf;
             const absErr = Math.abs(err);
             mae += absErr;
             mse += err * err;
             maxAbsError = Math.max(maxAbsError, absErr);
 
-            const dy = samples[i].realWeightKg - yMean;
+            const dy = samples[i].referenceCapacityPf - yMean;
             tss += dy * dy;
         }
 
@@ -521,7 +594,7 @@ class App {
         const r2 = tss > 1e-12 ? (1 - (mse / tss)) : (mse <= 1e-12 ? 1 : 0);
         const ref = this.getReferenceDeltaCounts();
         const factor = this.localFactorAt(modelKey, coeffs, ref, inverse);
-        const offset = this.calibrationOffset;
+        const offset = this.predictByModel(modelKey, coeffs, 0, inverse);
 
         return {
             key: modelKey,
@@ -568,23 +641,28 @@ class App {
 
         for (let i = 0; i < this.mlSamples.length; i++) {
             const sample = this.mlSamples[i];
-            const activePredicted = this.mlModel
-                ? this.predictByModel(this.mlModel.key, this.mlModel.coefficients, sample.deltaCounts, this.mlModel.inverse)
-                : sample.measuredWeightKg;
-            const error = activePredicted - sample.realWeightKg;
+            const activeCapacity = this.mlModel
+                ? this.predictByModel(this.mlModel.key, this.mlModel.coefficients, sample.signalFeatureValue, this.mlModel.inverse)
+                : sample.predictedCapacityPf;
+            const activeWeight = this.weightFromReferenceCapacity(activeCapacity);
+            const capacityError = activeCapacity - sample.referenceCapacityPf;
+            const weightError = activeWeight - sample.realWeightG;
 
             const tr = document.createElement('tr');
             tr.dataset.sampleId = sample.id.toString();
             tr.style.cursor = 'pointer';
             tr.innerHTML =
                 '<td>' + (i + 1).toString() + '</td>' +
-                '<td>' + sample.realWeightKg.toFixed(4) + '</td>' +
-                '<td>' + sample.measuredWeightKg.toFixed(4) + '</td>' +
-                '<td>' + activePredicted.toFixed(4) + '</td>' +
+                '<td>' + sample.realWeightG.toFixed(1) + '</td>' +
+                '<td>' + sample.referenceCapacityPf.toFixed(4) + '</td>' +
+                '<td>' + activeCapacity.toFixed(4) + '</td>' +
+                '<td>' + activeWeight.toFixed(1) + '</td>' +
                 '<td>' + sample.adcRaw.toString() + '</td>' +
                 '<td>' + sample.deltaCounts.toString() + '</td>' +
+                '<td>' + sample.signalFeatureValue.toFixed(4) + '</td>' +
                 '<td>' + this.getModelDisplayForSelection(sample.modelSelectionAtMeasurement) + '</td>' +
-                '<td>' + error.toFixed(4) + '</td>';
+                '<td>' + capacityError.toFixed(4) + '</td>' +
+                '<td>' + weightError.toFixed(1) + '</td>';
 
             tr.onclick = () => {
                 this.mlSelectedSampleId = sample.id;
@@ -621,7 +699,7 @@ class App {
             const sample = this.mlSamples[i];
             const opt = document.createElement('option');
             opt.value = sample.id.toString();
-            opt.text = '#' + (i + 1).toString() + ' | Real ' + sample.realWeightKg.toFixed(3) + ' kg | dADC ' + sample.deltaCounts.toString();
+            opt.text = '#' + (i + 1).toString() + ' | Real ' + sample.realWeightG.toFixed(1) + ' g | Cref ' + sample.referenceCapacityPf.toFixed(3) + ' pF';
             this.mlSampleSelectEl.appendChild(opt);
         }
 
@@ -645,15 +723,19 @@ class App {
         }
 
         const predicted = this.mlModel
-            ? this.predictByModel(this.mlModel.key, this.mlModel.coefficients, sample.deltaCounts, this.mlModel.inverse)
+            ? this.predictByModel(this.mlModel.key, this.mlModel.coefficients, sample.signalFeatureValue, this.mlModel.inverse)
             : NaN;
+        const predictedWeightG = isFinite(predicted) ? this.weightFromReferenceCapacity(predicted) : NaN;
         const lines: string[] = [
             'Messung #' + sample.id.toString(),
             'Zeit: ' + sample.timestamp,
-            'Real: ' + sample.realWeightKg.toFixed(6) + ' kg',
-            'Gemessen bei Aufnahme: ' + sample.measuredWeightKg.toFixed(6) + ' kg',
+            'Referenzgewicht: ' + sample.realWeightG.toFixed(3) + ' g',
+            'Referenzkapazität (aus C(m)): ' + sample.referenceCapacityPf.toFixed(6) + ' pF',
+            'Gespeicherte C-Vorhersage: ' + sample.predictedCapacityPf.toFixed(6) + ' pF',
+            'Gespeicherte m-Vorhersage: ' + sample.predictedWeightG.toFixed(3) + ' g',
             'ADC Rohwert: ' + sample.adcRaw.toString(),
             'ADC Delta (zu Tara): ' + sample.deltaCounts.toString(),
+            'Signal-Feature [' + sample.signalFeatureKey + ']: ' + sample.signalFeatureValue.toFixed(6),
             'Tara bei Messung: ' + sample.tareAtMeasurement.toString(),
             'Kalibrierfaktor bei Messung: ' + sample.calibrationAtMeasurement.toFixed(8),
             'Kalibrieroffset bei Messung: ' + sample.calibrationOffsetAtMeasurement.toFixed(8),
@@ -661,8 +743,10 @@ class App {
         ];
 
         if (isFinite(predicted)) {
-            lines.push('ML Vorhersage: ' + predicted.toFixed(6) + ' kg');
-            lines.push('ML Fehler: ' + (predicted - sample.realWeightKg).toFixed(6) + ' kg');
+            lines.push('Aktive C-Vorhersage: ' + predicted.toFixed(6) + ' pF');
+            lines.push('Aktiver C-Fehler: ' + (predicted - sample.referenceCapacityPf).toFixed(6) + ' pF');
+            lines.push('Aktive m-Vorhersage aus C: ' + predictedWeightG.toFixed(3) + ' g');
+            lines.push('Aktiver m-Fehler: ' + (predictedWeightG - sample.realWeightG).toFixed(3) + ' g');
         }
 
         this.mlSelectedDetailsEl.innerHTML = lines.join('<br>');
@@ -674,8 +758,8 @@ class App {
         let xMax = 0;
 
         for (let i = 0; i < this.mlSamples.length; i++) {
-            const x = this.mlSamples[i].deltaCounts;
-            const y = this.mlSamples[i].realWeightKg;
+            const x = this.mlSamples[i].signalFeatureValue;
+            const y = this.mlSamples[i].referenceCapacityPf;
             const selection = this.mlSamples[i].modelSelectionAtMeasurement;
             if (!groupedBySelection[selection]) {
                 groupedBySelection[selection] = [];
@@ -728,7 +812,7 @@ class App {
             if (selected) {
                 series.push({
                     label: 'Ausgewählte Messung',
-                    data: [[selected.deltaCounts, selected.realWeightKg]],
+                    data: [[selected.signalFeatureValue, selected.referenceCapacityPf]],
                     points: { show: true, radius: 7 },
                     lines: { show: false },
                     color: '#2ca02c'
@@ -745,8 +829,8 @@ class App {
             legend: {
                 position: 'nw'
             },
-            xaxis: {},
-            yaxis: {}
+            xaxis: { axisLabel: 'Signal-Feature x' },
+            yaxis: { axisLabel: 'Kapazität C [pF]' }
         });
     }
 
@@ -763,11 +847,11 @@ class App {
     }
 
     private getCurrentModelTag(): string {
-        return this.makeModelTag(this.getSelectedModelSelection(), this.isInverseModeEnabled());
+        return this.makeModelTag(this.getSelectedModelSelection(), this.isInverseModeEnabled(), this.getSelectedSignalFeature());
     }
 
-    private makeModelTag(selection: ModelSelection, inverse: boolean): string {
-        return selection + '|inv=' + (inverse ? '1' : '0');
+    private makeModelTag(selection: ModelSelection, inverse: boolean, feature: string): string {
+        return selection + '|inv=' + (inverse ? '1' : '0') + '|feat=' + feature;
     }
 
     private getSelectedCriterion(): ModelCriterion {
@@ -806,6 +890,56 @@ class App {
         return Math.max(1, rounded);
     }
 
+    private getSelectedSignalFeature(): string {
+        const value = this.mlSignalFeatureSelectEl ? this.mlSignalFeatureSelectEl.value : 'delta';
+        if (value === 'delta' || value === 'abs_delta' || value === 'adc_raw' || value === 'log_abs_delta') {
+            return value;
+        }
+        return 'delta';
+    }
+
+    private extractSignalFeatureValue(adcRaw: number, deltaCounts: number): number {
+        const key = this.getSelectedSignalFeature();
+        if (key === 'adc_raw') {
+            return adcRaw;
+        }
+        if (key === 'abs_delta') {
+            return Math.abs(deltaCounts);
+        }
+        if (key === 'log_abs_delta') {
+            return Math.log(Math.abs(deltaCounts) + 1);
+        }
+        return deltaCounts;
+    }
+
+    private getReferenceA(): number {
+        return this.parseNumber(this.mlRefAInput ? this.mlRefAInput.value : '2.95', 2.95);
+    }
+
+    private getReferenceB(): number {
+        return this.parseNumber(this.mlRefBInput ? this.mlRefBInput.value : '0.00162', 0.00162);
+    }
+
+    private getReferenceC0(): number {
+        return this.parseNumber(this.mlRefC0Input ? this.mlRefC0Input.value : '14.59', 14.59);
+    }
+
+    private capacityFromReferenceModel(weightG: number): number {
+        const a = this.getReferenceA();
+        const b = this.getReferenceB();
+        const c0 = this.getReferenceC0();
+        return (a * Math.exp(b * weightG)) + c0;
+    }
+
+    private weightFromReferenceCapacity(capacityPf: number): number {
+        const a = this.getReferenceA();
+        const b = this.getReferenceB();
+        const c0 = this.getReferenceC0();
+        const eps = 1e-12;
+        const arg = (capacityPf - c0) / (Math.abs(a) > eps ? a : eps);
+        return Math.log(Math.abs(arg) + eps) / (Math.abs(b) > eps ? b : eps);
+    }
+
     private getModelLabel(key: ModelKey): string {
         if (key === 'linear') return 'Linear';
         if (key === 'quadratic') return 'Quadratisch';
@@ -815,11 +949,14 @@ class App {
 
     private getModelDisplayForSelection(selection: string): string {
         if (selection.indexOf('|inv=') >= 0) {
-            const parts = selection.split('|inv=');
-            const base = parts[0];
-            const inv = parts[1] === '1';
+            const parts = selection.split('|');
+            const base = parts.length > 0 ? parts[0] : '';
+            const invPart = parts.find(p => p.indexOf('inv=') === 0) || 'inv=0';
+            const featPart = parts.find(p => p.indexOf('feat=') === 0) || 'feat=delta';
+            const inv = invPart === 'inv=1';
+            const feat = featPart.replace('feat=', '');
             if (base === 'linear' || base === 'quadratic' || base === 'exponential') {
-                return this.getModelLabel(base) + (inv ? ' + Inverse' : '');
+                return this.getModelLabel(base) + (inv ? ' + Inverse' : '') + ' [' + feat + ']';
             }
         }
         if (selection === 'linear' || selection === 'quadratic' || selection === 'exponential') {
@@ -833,7 +970,7 @@ class App {
         if (scope !== 'active_model') {
             return this.mlSamples.slice();
         }
-        const currentTag = this.makeModelTag(selection, this.isInverseModeEnabled());
+        const currentTag = this.makeModelTag(selection, this.isInverseModeEnabled(), this.getSelectedSignalFeature());
         return this.mlSamples.filter(sample => sample.modelSelectionAtMeasurement === currentTag);
     }
 
@@ -909,26 +1046,22 @@ class App {
             return null;
         }
 
-        let minX = this.transformInput(samples[0].deltaCounts, inverse);
-        let maxX = this.transformInput(samples[0].deltaCounts, inverse);
-        let minY = samples[0].realWeightKg;
-        let maxY = samples[0].realWeightKg;
-        let sumY = 0;
+        let minX = this.transformInput(samples[0].signalFeatureValue, inverse);
+        let maxX = this.transformInput(samples[0].signalFeatureValue, inverse);
+        let minY = samples[0].referenceCapacityPf;
+        let maxY = samples[0].referenceCapacityPf;
 
         for (let i = 0; i < samples.length; i++) {
-            const x = this.transformInput(samples[i].deltaCounts, inverse);
-            const y = samples[i].realWeightKg;
+            const x = this.transformInput(samples[i].signalFeatureValue, inverse);
+            const y = samples[i].referenceCapacityPf;
             minX = Math.min(minX, x);
             maxX = Math.max(maxX, x);
             minY = Math.min(minY, y);
             maxY = Math.max(maxY, y);
-            sumY += y;
         }
 
         const spanX = Math.max(1e-6, maxX - minX);
         const spanY = Math.max(1e-6, maxY - minY);
-        const meanY = sumY / samples.length;
-
         let params: number[] = [Math.max(spanY, 1e-3), 1 / spanX];
 
         let learningRate = 1e-3;
@@ -963,11 +1096,11 @@ class App {
     private nonlinearLoss(modelKey: ModelKey, params: number[], samples: CalibrationSample[], inverse: boolean): number {
         let mse = 0;
         for (let i = 0; i < samples.length; i++) {
-            const yHat = this.predictByModel(modelKey, params, samples[i].deltaCounts, inverse);
+            const yHat = this.predictByModel(modelKey, params, samples[i].signalFeatureValue, inverse);
             if (!isFinite(yHat)) {
                 return 1e30;
             }
-            const err = yHat - samples[i].realWeightKg;
+            const err = yHat - samples[i].referenceCapacityPf;
             mse += err * err;
         }
         return mse / samples.length;
@@ -1005,7 +1138,7 @@ class App {
         const residuals: number[] = [];
         let mean = 0;
         for (let i = 0; i < samples.length; i++) {
-            const err = this.predictByModel(modelKey, coeffs, samples[i].deltaCounts, inverse) - samples[i].realWeightKg;
+            const err = this.predictByModel(modelKey, coeffs, samples[i].signalFeatureValue, inverse) - samples[i].referenceCapacityPf;
             residuals.push(err);
             mean += err;
         }
@@ -1051,15 +1184,15 @@ class App {
     private predictByModel(modelKey: ModelKey, coeffs: number[], x: number, inverse: boolean): number {
         const u = this.transformInput(x, inverse);
         if (modelKey === 'linear') {
-            return (coeffs[0] * u) + this.calibrationOffset;
+            return coeffs[0] * u;
         }
         if (modelKey === 'quadratic') {
-            return (coeffs[0] * u * u + coeffs[1] * u) + this.calibrationOffset;
+            return coeffs[0] * u * u + coeffs[1] * u;
         }
         if (modelKey === 'exponential') {
-            return (coeffs[0] * Math.exp(coeffs[1] * u)) + this.calibrationOffset;
+            return coeffs[0] * Math.exp(coeffs[1] * u);
         }
-        return this.calibrationOffset;
+        return 0;
     }
 
     private localFactorAt(modelKey: ModelKey, coeffs: number[], x: number, inverse: boolean): number {
@@ -1078,11 +1211,18 @@ class App {
         return (2 * coeffs[0] * x) + coeffs[1];
     }
 
-    private predictWeightFromRuntime(deltaCounts: number): number {
+    private predictCapacityFromRuntime(adcRaw: number, deltaCounts: number): number {
         if (this.runtimeModel) {
-            return this.predictByModel(this.runtimeModel.key, this.runtimeModel.coefficients, deltaCounts, this.runtimeModel.inverse);
+            const feature = this.extractSignalFeatureValue(adcRaw, deltaCounts);
+            return this.predictByModel(this.runtimeModel.key, this.runtimeModel.coefficients, feature, this.runtimeModel.inverse);
         }
-        return deltaCounts * this.calibrationFactor + this.calibrationOffset;
+        const fallbackWeightG = deltaCounts * this.calibrationFactor + this.calibrationOffset;
+        return this.capacityFromReferenceModel(fallbackWeightG);
+    }
+
+    private predictWeightFromRuntime(adcRaw: number, deltaCounts: number): number {
+        const capPf = this.predictCapacityFromRuntime(adcRaw, deltaCounts);
+        return this.weightFromReferenceCapacity(capPf);
     }
 
     private cloneModel(model: CalibrationModel): CalibrationModel {
@@ -1169,8 +1309,20 @@ class App {
 
     private updateScaleLoop(): void {
         this.connector.getAdcRawData(this.getMlAverageCount(), (adc0, _) => {
-            const weight = this.predictWeightFromRuntime(adc0 - this.tareOffset);
-            this.weightEl.innerText = weight.toFixed(3);
+            if (this.mlWorkflowEnabled) {
+                const delta = adc0 - this.tareOffset;
+                const weightG = this.predictWeightFromRuntime(adc0, delta);
+                this.weightEl.innerText = (weightG / 1000).toFixed(3);
+                if (this.mlLiveCapacityEl) {
+                    this.mlLiveCapacityEl.innerText = this.predictCapacityFromRuntime(adc0, delta).toFixed(4);
+                }
+                if (this.mlLiveWeightFromCapacityEl) {
+                    this.mlLiveWeightFromCapacityEl.innerText = weightG.toFixed(3);
+                }
+            } else {
+                const weightKg = (adc0 - this.tareOffset) * this.calibrationFactor;
+                this.weightEl.innerText = weightKg.toFixed(3);
+            }
 
             setTimeout(() => {
                 this.updateScaleLoop();
@@ -1179,7 +1331,10 @@ class App {
     }
 
     private countsToKg(values: number[]): number[] {
-        return values.map(v => this.predictWeightFromRuntime(v - this.tareOffset));
+        if (this.mlWorkflowEnabled) {
+            return values.map(v => this.predictWeightFromRuntime(v, v - this.tareOffset) / 1000);
+        }
+        return values.map(v => (v - this.tareOffset) * this.calibrationFactor);
     }
 
     private computeRms(values: number[]): number {

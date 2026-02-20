@@ -31,17 +31,10 @@
 
   <div class="container-fluid" id="main">
 
-    <ul class="nav nav-tabs" style="margin-bottom:12px;">
-      <li><a href="scale.html">Scale</a></li>
-      <li class="active"><a href="ml.html">ML</a></li>
-    </ul>
-
     <div class="row">
       <div class="col-md-8">
         <section class="panel panel-default plot-panel">
-          <div class="panel-heading">
-            <strong>Diagnose Plot</strong>
-          </div>
+          <div class="panel-heading"><strong>Diagnose Plot</strong></div>
           <div class="panel-body">
             <div id="plot-placeholder" class="plot-placeholder"></div>
             <div id="plot-basics"></div>
@@ -54,135 +47,185 @@
         </section>
 
         <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>Scale</span></div>
+          <div class="crossed"><span>Scale Laufzeit</span></div>
           <div style="font-size: 3.2em; font-weight: 700; margin-bottom: 8px;">
             <span id="weight-value">0.000</span> <span style="font-size: 0.45em;">kg</span>
           </div>
-          <button id="btn-tare" class="btn btn-warning btn-block">Tara (Null setzen)</button>
+          <div>Live Kapazität: <strong id="ml-live-capacity">-</strong> pF</div>
+          <div>Live Gewicht aus C: <strong id="ml-live-weight-from-capacity">-</strong> g</div>
+          <button id="btn-tare" class="btn btn-warning btn-block" style="margin-top:8px;">Tara (Null setzen)</button>
           <div style="margin-top: 14px;">
             <div class="form-group">
-              <label for="input-calibration">Kalibrierungs-Faktor (kg pro ADC-Schritt)</label>
-              <input type="number" id="input-calibration" class="form-control" value="0.0005" step="0.0001">
+              <label for="input-calibration">Fallback Faktor (g pro ADC-Schritt)</label>
+              <input type="number" id="input-calibration" class="form-control" value="0.5" step="0.0001">
             </div>
             <div class="form-group">
-              <label for="input-calibration-offset">Kalibrierungs-Offset (kg)</label>
+              <label for="input-calibration-offset">Fallback Offset (g)</label>
               <input type="number" id="input-calibration-offset" class="form-control" value="0" step="0.0001">
             </div>
-            <button id="btn-save-scale" class="btn btn-success btn-block">Kalibrierung übernehmen</button>
+            <button id="btn-save-scale" class="btn btn-success btn-block">Fallback übernehmen</button>
           </div>
         </section>
 
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>ML Modell-Konfiguration</span></div>
-          <div class="form-group">
-            <label for="ml-model-select">Modellwahl</label>
-            <select id="ml-model-select" class="form-control">
-              <option value="linear">Linear</option>
-              <option value="quadratic">Quadratisch</option>
-              <option value="exponential">Exponentiell</option>
-            </select>
-          </div>
-          <div class="checkbox" style="margin-top:0;">
-            <label>
-              <input type="checkbox" id="ml-inverse-mode">
-              Globaler Inverse-Modus (für alle Modelle)
-            </label>
-          </div>
-          <div class="form-group">
-            <label for="ml-fit-sample-scope">Trainingsdaten</label>
-            <select id="ml-fit-sample-scope" class="form-control">
-              <option value="all">Alle Messungen</option>
-              <option value="active_model">Nur Messungen des aktiven Modells</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="ml-criterion-select">Auswahlkriterium</label>
-            <select id="ml-criterion-select" class="form-control">
-              <option value="rmse">RMSE minimieren</option>
-              <option value="mae">MAE minimieren</option>
-              <option value="maxerr">Maximalfehler minimieren</option>
-              <option value="r2">R² maximieren</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="ml-outlier-sigma">Outlier-Filter (Sigma, 0=aus)</label>
-            <input type="number" id="ml-outlier-sigma" class="form-control" value="0" min="0" step="0.1">
-          </div>
-          <div class="form-group">
-            <label for="ml-ridge-lambda">Ridge-Regularisierung λ</label>
-            <input type="number" id="ml-ridge-lambda" class="form-control" value="0" min="0" step="0.0001">
-          </div>
-          <div class="form-group">
-            <label for="ml-factor-ref-delta">Referenz-Delta für lokalen Faktor (ADC)</label>
-            <input type="number" id="ml-factor-ref-delta" class="form-control" value="0" step="1">
-          </div>
-          <div class="form-group">
-            <label for="ml-avg-count">Mittelung pro Messung (ADC Abtastungen)</label>
-            <input type="number" id="ml-avg-count" class="form-control" value="16" min="1" step="1">
-          </div>
-        </section>
+        <ul class="nav nav-tabs" style="margin-bottom:10px;">
+          <li class="active"><a data-toggle="tab" href="#ml-ref-tab">1) Referenz C(m)</a></li>
+          <li><a data-toggle="tab" href="#ml-acq-tab">2) Messung Signal->C</a></li>
+          <li><a data-toggle="tab" href="#ml-fit-tab">3) Fit & Auswertung</a></li>
+        </ul>
 
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>ML Training</span></div>
-          <div class="form-group">
-            <label for="input-ml-real-weight">Reales Gewicht (kg)</label>
-            <input type="number" id="input-ml-real-weight" class="form-control" step="0.001" min="0" value="1.000">
+        <div class="tab-content">
+          <div id="ml-ref-tab" class="tab-pane fade in active">
+            <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+              <div class="crossed"><span>Referenzmodell aus LCR</span></div>
+              <div class="row">
+                <div class="col-sm-4 form-group">
+                  <label for="ml-ref-a">A [pF]</label>
+                  <input type="number" id="ml-ref-a" class="form-control" value="2.95" step="0.0001">
+                </div>
+                <div class="col-sm-4 form-group">
+                  <label for="ml-ref-b">b [1/g]</label>
+                  <input type="number" id="ml-ref-b" class="form-control" value="0.00162" step="0.000001">
+                </div>
+                <div class="col-sm-4 form-group">
+                  <label for="ml-ref-c0">C0 [pF]</label>
+                  <input type="number" id="ml-ref-c0" class="form-control" value="14.59" step="0.0001">
+                </div>
+              </div>
+              <p style="margin:0;">Formel: <code>C(m) = A * exp(b*m) + C0</code> und <code>m(C) = ln((C-C0)/A)/b</code></p>
+            </section>
           </div>
-          <button id="btn-ml-measure-add" class="btn btn-primary btn-block">Messung durchführen & Wert speichern</button>
-          <div style="margin-top:8px;">Gemessener Wert: <strong id="ml-last-measured-weight">-</strong> kg</div>
-          <div>ADC Rohwert: <strong id="ml-last-adc">-</strong></div>
-        </section>
 
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>ML Daten (Gespeicherte Werte)</span></div>
-          <div style="max-height:220px; overflow:auto;">
-            <table class="table table-condensed table-striped" style="margin-bottom:0;">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Real (kg)</th>
-                  <th>Messung Aufnahme (kg)</th>
-                  <th>Vorhersage aktiv (kg)</th>
-                  <th>ADC</th>
-                  <th>Delta ADC</th>
-                  <th>Modell bei Messung</th>
-                  <th>Fehler aktiv (kg)</th>
-                </tr>
-              </thead>
-              <tbody id="ml-samples-body"></tbody>
-            </table>
+          <div id="ml-acq-tab" class="tab-pane fade">
+            <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+              <div class="crossed"><span>Signal->Kapazität Konfiguration</span></div>
+              <div class="row">
+                <div class="col-sm-4 form-group">
+                  <label for="ml-model-select">Modelltyp</label>
+                  <select id="ml-model-select" class="form-control">
+                    <option value="linear">Linear</option>
+                    <option value="quadratic">Quadratisch</option>
+                    <option value="exponential">Exponentiell</option>
+                  </select>
+                </div>
+                <div class="col-sm-4 form-group">
+                  <label for="ml-signal-feature">Signal-Feature x</label>
+                  <select id="ml-signal-feature" class="form-control">
+                    <option value="delta">delta_counts</option>
+                    <option value="abs_delta">abs(delta_counts)</option>
+                    <option value="adc_raw">adc_raw</option>
+                    <option value="log_abs_delta">log(abs(delta)+1)</option>
+                  </select>
+                </div>
+                <div class="col-sm-4 form-group">
+                  <label for="ml-avg-count">Mittelung ADC</label>
+                  <input type="number" id="ml-avg-count" class="form-control" value="16" min="1" step="1">
+                </div>
+              </div>
+              <div class="checkbox" style="margin-top:0;">
+                <label><input type="checkbox" id="ml-inverse-mode"> Globaler Inverse-Modus auf x</label>
+              </div>
+              <div class="row">
+                <div class="col-sm-4 form-group">
+                  <label for="ml-fit-sample-scope">Trainingsdaten</label>
+                  <select id="ml-fit-sample-scope" class="form-control">
+                    <option value="all">Alle Messungen</option>
+                    <option value="active_model">Nur aktiver Modus</option>
+                  </select>
+                </div>
+                <div class="col-sm-4 form-group">
+                  <label for="ml-outlier-sigma">Outlier-Sigma</label>
+                  <input type="number" id="ml-outlier-sigma" class="form-control" value="0" min="0" step="0.1">
+                </div>
+                <div class="col-sm-4 form-group">
+                  <label for="ml-ridge-lambda">Ridge λ</label>
+                  <input type="number" id="ml-ridge-lambda" class="form-control" value="0" min="0" step="0.0001">
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-sm-6 form-group">
+                  <label for="ml-factor-ref-delta">Referenzpunkt für lokalen Faktor</label>
+                  <input type="number" id="ml-factor-ref-delta" class="form-control" value="0" step="1">
+                </div>
+                <div class="col-sm-6 form-group">
+                  <label for="ml-criterion-select">Kriterium (Info)</label>
+                  <select id="ml-criterion-select" class="form-control">
+                    <option value="rmse">RMSE</option>
+                    <option value="mae">MAE</option>
+                    <option value="maxerr">Max Fehler</option>
+                    <option value="r2">R²</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+              <div class="crossed"><span>Messung mit Referenzgewicht</span></div>
+              <div class="form-group">
+                <label for="input-ml-real-weight">Referenzgewicht m_ref [g]</label>
+                <input type="number" id="input-ml-real-weight" class="form-control" step="1" min="0" value="100">
+              </div>
+              <button id="btn-ml-measure-add" class="btn btn-primary btn-block">Messung durchführen & Punkt speichern</button>
+              <div style="margin-top:8px;">Letzte m-Vorhersage: <strong id="ml-last-measured-weight">-</strong> g</div>
+              <div>ADC Rohwert: <strong id="ml-last-adc">-</strong></div>
+            </section>
           </div>
-        </section>
 
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>Reset Werte</span></div>
-          <button id="btn-ml-reset-values" class="btn btn-danger btn-block">Alle ML-Werte löschen</button>
-        </section>
+          <div id="ml-fit-tab" class="tab-pane fade">
+            <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+              <div class="crossed"><span>Signal->C Fit Ergebnis</span></div>
+              <div>Aktives Modell: <strong id="ml-recommended-model">-</strong></div>
+              <div>Verwendete Samples: <strong id="ml-recommended-used-samples">-</strong></div>
+              <div>Lokaler Faktor dC/dx: <strong id="ml-recommended-factor">-</strong></div>
+              <div>Offset C(x=0): <strong id="ml-recommended-offset">-</strong> pF</div>
+              <div>MAE [pF]: <strong id="ml-recommended-mae">-</strong></div>
+              <div>RMSE [pF]: <strong id="ml-recommended-rmse">-</strong></div>
+              <div>Max-Fehler [pF]: <strong id="ml-recommended-max-error">-</strong></div>
+              <div>R²: <strong id="ml-recommended-r2">-</strong></div>
+              <button id="btn-ml-apply-recommended" class="btn btn-success btn-block" style="margin-top:10px;">Signal->C Modell übernehmen</button>
+            </section>
 
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>Empfohlenes Kalibrier-Ergebnis</span></div>
-          <div>Aktives Modell: <strong id="ml-recommended-model">-</strong></div>
-          <div>Verwendete Samples: <strong id="ml-recommended-used-samples">-</strong></div>
-          <div>Kalibrierfaktor (kg/ADC): <strong id="ml-recommended-factor">-</strong></div>
-          <div>Offset (kg): <strong id="ml-recommended-offset">-</strong></div>
-          <div>MAE (kg): <strong id="ml-recommended-mae">-</strong></div>
-          <div>RMSE (kg): <strong id="ml-recommended-rmse">-</strong></div>
-          <div>Max-Fehler (kg): <strong id="ml-recommended-max-error">-</strong></div>
-          <div>R²: <strong id="ml-recommended-r2">-</strong></div>
-          <button id="btn-ml-apply-recommended" class="btn btn-success btn-block" style="margin-top:10px;">Empfohlenen Faktor übernehmen</button>
-        </section>
+            <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+              <div class="crossed"><span>Messdatensatz</span></div>
+              <div style="max-height:240px; overflow:auto;">
+                <table class="table table-condensed table-striped" style="margin-bottom:0;">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>m_ref [g]</th>
+                      <th>C_ref [pF]</th>
+                      <th>C_pred [pF]</th>
+                      <th>m_pred [g]</th>
+                      <th>ADC</th>
+                      <th>delta</th>
+                      <th>Feature</th>
+                      <th>Modus</th>
+                      <th>e_C [pF]</th>
+                      <th>e_m [g]</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ml-samples-body"></tbody>
+                </table>
+              </div>
+            </section>
 
-        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
-          <div class="crossed"><span>ML Plot & Messungsdetails</span></div>
-          <div class="form-group">
-            <label for="ml-sample-select">Messwert auswählen</label>
-            <select id="ml-sample-select" class="form-control">
-              <option value="">Keine Messung ausgewählt</option>
-            </select>
+            <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+              <div class="crossed"><span>Plot & Details</span></div>
+              <div class="form-group">
+                <label for="ml-sample-select">Messwert auswählen</label>
+                <select id="ml-sample-select" class="form-control">
+                  <option value="">Keine Messung ausgewählt</option>
+                </select>
+              </div>
+              <div id="ml-plot-placeholder" style="height:240px; border:1px solid #ddd; margin-bottom:10px;"></div>
+              <div id="ml-selected-details">Keine Messung ausgewählt.</div>
+            </section>
+
+            <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+              <div class="crossed"><span>Reset</span></div>
+              <button id="btn-ml-reset-values" class="btn btn-danger btn-block">Alle ML-Werte löschen</button>
+            </section>
           </div>
-          <div id="ml-plot-placeholder" style="height:220px; border:1px solid #ddd; margin-bottom:10px;"></div>
-          <div id="ml-selected-details">Keine Messung ausgewählt.</div>
-        </section>
+        </div>
       </div>
 
       <div class="col-md-4">
@@ -227,11 +270,9 @@
         </section>
       </div>
     </div>
-
   </div>
 
   <script src="app.js"></script>
-
   <script language="javascript" type="text/javascript" src="jquery.flot.js"></script>
   <script language="javascript" type="text/javascript" src="jquery.flot.resize.js"></script>
   <script language="javascript" type="text/javascript" src="jquery.flot.selection.js"></script>
