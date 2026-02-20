@@ -370,6 +370,29 @@ class PlotBasics {
      callback();
     }
 
+    redrawSeries(series: jquery.flot.dataSeries[], range_x: jquery.flot.range, callback: () => void): void {
+        if (series.length === 0) {
+            callback();
+            return;
+        }
+
+        if (this.reset_range) {
+            this.options.xaxis.min = range_x.from;
+            this.options.xaxis.max = range_x.to;
+            this.options.yaxis.min = this.range_y.from;
+            this.options.yaxis.max = this.range_y.to;
+
+            this.plot = $.plot(this.plot_placeholder, series, this.options);
+            this.plot.setupGrid();
+            this.reset_range = false;
+        } else {
+            this.plot.setData(series);
+            this.plot.draw();
+        }
+
+        callback();
+    }
+
     onWheel(rangeFunction: string): void {
         this.plot_placeholder.bind("wheel", (evt: JQueryEventObject) => {
             let delta: number = (<JQueryMousewheel.JQueryMousewheelEventObject>evt.originalEvent).deltaX

@@ -42,20 +42,16 @@
           <div class="crossed">
             <span>ADC-DAC BRAM Tools</span>
           </div>
-          <label for="switch1">Signal Select</label>
-          <label class="switch">
-            <input type="checkbox" id="switch1">
-            <span class="slider round"></span>
-          </label>
-
-          <label for="switch2">Angezeigter Kanal</label>
-          <label class="switch">
-            <input type="checkbox" id="switch2">
-            <span class="slider round"></span>
-          </label>
+          <label for="signal-type">Signaltyp</label>
+          <select id="signal-type" class="form-control">
+            <option value="0">Sinus</option>
+            <option value="1">Saegezahn</option>
+            <option value="2">Dreieck</option>
+          </select>
 
           <label for="slider1">f (Hz)</label>
           <input type="range" id="slider1" min="8000" max="100000" value="10000">
+          <div style="margin-top: 10px;">Aktiv: <strong id="signal-label">Sinus</strong></div>
         </section>
       </div>
     </div>
@@ -80,8 +76,15 @@
             </div>
 
             <hr>
-            <div>ADC0 Rohwert: <strong id="adc0-live">0</strong></div>
-            <div>ADC1 Rohwert: <strong id="adc1-live">0</strong></div>
+            <div>IN1 (ADC0, Live): <strong id="adc0-live">0</strong></div>
+            <div>IN2 (ADC1, Live): <strong id="adc1-live">0</strong></div>
+            <div>OUT1 (DAC0, Live): <strong id="dac0-live">0</strong></div>
+            <div>OUT2 (DAC1, Live): <strong id="dac1-live">0</strong></div>
+            <hr>
+            <div>IN1 (ADC0, Waage): <strong id="adc0-scale">0</strong></div>
+            <div>IN2 (ADC1, Waage): <strong id="adc1-scale">0</strong></div>
+            <div>OUT1 (DAC0, Waage): <strong id="dac0-scale">0</strong></div>
+            <div>OUT2 (DAC1, Waage): <strong id="dac1-scale">0</strong></div>
           </div>
         </div>
       </div>

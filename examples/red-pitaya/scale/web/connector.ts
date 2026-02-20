@@ -56,6 +56,20 @@ class Connector {
             }
         );
     }
+
+    getAdcSnapshot(callback: (array: Uint32Array) => void): void {
+        this.client.readUint32Vector(
+            Command(this.driver.id, this.cmds['get_adc_snapshot']),
+            (array: Uint32Array) => callback(array)
+        );
+    }
+
+    getDacSnapshot(callback: (array: Uint32Array) => void): void {
+        this.client.readUint32Vector(
+            Command(this.driver.id, this.cmds['get_dac_snapshot']),
+            (array: Uint32Array) => callback(array)
+        );
+    }
     
    
 }

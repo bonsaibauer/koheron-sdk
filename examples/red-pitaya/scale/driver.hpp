@@ -12,6 +12,7 @@
 #include <string>
 #include <sstream>
 #include <tuple>
+#include <vector>
 
 constexpr uint32_t dac_size = mem::dac_range/sizeof(uint32_t);
 constexpr uint32_t adc_size = mem::adc_range/sizeof(uint32_t);
@@ -46,37 +47,51 @@ class AdcDacBram
     }
 
     void set_dac_function(uint32_t function,double f) {
-    	std::array<uint32_t, dac_size> data;
-        double T=1/f;
-        double Tmax=(dac_size-1)/fs;
-        current_function=function;
-        current_frequency=f;
+        std::array<uint32_t, dac_size> data;
+        constexpr double pi = 3.14159265358979323846;
+        const double min_freq = fs / static_cast<double>(dac_size);
+        const double frequency = std::max(min_freq, std::min(f, fs / 2.0));
+        const uint32_t waveform = function % 3;
 
-        uint32_t len=static_cast<uint32_t>(std::floor(Tmax/T)*fs/f);
-        current_waveform_len=len;
-        
-        ctl.write<reg::trig>(((len-1)<<1)+(1&ctl.read<reg::trig>()));
+        current_function = waveform;
+        current_frequency = frequency;
 
-        double temp_integral;
-	
-        if(function==0){
-            for (uint32_t i=0;i<data.size();i++) {
-                double valt=modf((f*i/fs),&temp_integral);
-                int32_t val2=static_cast<int32_t>( (2*valt-1    )*dac_resolution/2.1);	
-                uint32_t val=(val2 % (dac_resolution-1));
-                data[i]=(val+(val<<16));
+        const double phase_increment = frequency / fs;
+        uint32_t len = static_cast<uint32_t>(std::floor(fs / frequency));
+        len = std::max<uint32_t>(2, std::min<uint32_t>(len, dac_size));
+        current_waveform_len = len;
+        ctl.write<reg::trig>(((len - 1) << 1) + (1 & ctl.read<reg::trig>()));
+
+        for (uint32_t i = 0; i < data.size(); i++) {
+            const double phase = std::fmod(i * phase_increment, 1.0);
+            double y = 0.0;
+
+            if (waveform == 0) {
+                y = std::sin(2.0 * pi * phase);
+            } else if (waveform == 1) {
+                y = 2.0 * phase - 1.0;
+            } else {
+                y = 2.0 * std::abs(2.0 * phase - 1.0) - 1.0;
             }
-        } else {
-            for (uint32_t i=0;i<data.size();i++) {
-                double valt=modf((f*i/fs),&temp_integral);
-                int32_t val2=static_cast<int32_t>((2*fabs( 2*valt-1)-1)*dac_resolution/2.1);
-                
-                uint32_t val=(val2 % (dac_resolution-1));
-                data[i]=(val+(val<<16));
-            }
+
+            const int32_t val = static_cast<int32_t>(std::llround(y * (dac_resolution / 2.2)));
+            const uint32_t packed = static_cast<uint32_t>(std::max(-8192, std::min(8191, val)) & 0x3FFF);
+            data[i] = packed + (packed << 16);
         }
-    	dac_map.write_array(data);
-    
+
+        dac_map.write_array(data);
+    }
+
+    std::vector<uint32_t>& get_adc_snapshot() {
+        auto arr = get_adc();
+        adc_snapshot.assign(arr.begin(), arr.end());
+        return adc_snapshot;
+    }
+
+    std::vector<uint32_t>& get_dac_snapshot() {
+        auto arr = dac_map.read_array<uint32_t, dac_size>();
+        dac_snapshot.assign(arr.begin(), arr.end());
+        return dac_snapshot;
     }
 
     void set_dac_data(const std::array<uint32_t, dac_size>& data) {
@@ -132,7 +147,12 @@ class AdcDacBram
         double Tmax=(dac_size-1)/fs;
 
         std::ostringstream oss;
-        const char* function_name = (current_function == 0) ? "Sinus (0)" : "Rampe (1)";
+        const char* function_name = "Sinus (0)";
+        if (current_function == 1) {
+            function_name = "Saegezahn (1)";
+        } else if (current_function == 2) {
+            function_name = "Dreieck (2)";
+        }
 
         oss << "--- Aktuelle DAC-Konfiguration ---\n";
         oss << "  Funktion: " << function_name << "\n";
@@ -158,6 +178,8 @@ class AdcDacBram
     Memory<mem::adc>& adc_map;
     Memory<mem::dac>& dac_map;
     std::vector<float> decimated_data;
+    std::vector<uint32_t> adc_snapshot;
+    std::vector<uint32_t> dac_snapshot;
     uint32_t current_function;
     double current_frequency;
     uint32_t current_waveform_len;
