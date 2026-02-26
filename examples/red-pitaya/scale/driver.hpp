@@ -14,14 +14,14 @@
 #include <tuple>
 #include <vector>
 
-constexpr uint32_t dac_size = mem::dac_range/sizeof(uint32_t);
-constexpr uint32_t adc_size = mem::adc_range/sizeof(uint32_t);
+constexpr uint32_t dac_size = mem::dac_range / sizeof(uint32_t);
+constexpr uint32_t adc_size = mem::adc_range / sizeof(uint32_t);
 
-class AdcDacBram
-{
-
-
+class AdcDacBram {
   public:
+    // ----------------------------
+    // Module: Initialization
+    // ----------------------------
     AdcDacBram(Context& ctx_)
     : ctx(ctx_)
     , ctl(ctx.mm.get<mem::control>())
@@ -29,10 +29,14 @@ class AdcDacBram
     , adc_map(ctx.mm.get<mem::adc>())
     , dac_map(ctx.mm.get<mem::dac>())
     {
-
-        set_dac_function(0,10000.0);
+        current_output_channel = 0;
+        current_amplitude_vpk = 10.0;
+        set_dac_function(1, 10000.0);
     }
-    
+
+    // ----------------------------
+    // Module: Acquisition Trigger + Buffer Sizes
+    // ----------------------------
     void trigger_acquisition() {
         // Toggle trigger bit to generate a deterministic edge for the FPGA counter.
         ctl.write<reg::trig>(ctl.read<reg::trig>() ^ 0x1);
@@ -46,47 +50,68 @@ class AdcDacBram
         return adc_size;
     }
 
-    void set_dac_function(uint32_t function,double f) {
-        std::array<uint32_t, dac_size> data;
-        constexpr double pi = 3.14159265358979323846;
-        const double frequency = std::max(1.0, std::min(f, fs / 2.0));
-        double T = 1 / frequency;
-        double Tmax = (dac_size - 1) / fs;
-        current_function = function;
-        current_frequency = frequency;
+    // ----------------------------
+    // Module: DAC Configuration
+    // ----------------------------
+    void set_dac_function(uint32_t function, double f) {
+        current_function = std::min(function, uint32_t(3));
+        current_frequency = std::max(1.0, std::min(f, fs / 2.0));
 
-        uint32_t len = static_cast<uint32_t>(std::floor(Tmax / T) * fs / frequency);
+        const double T = 1.0 / current_frequency;
+        const double Tmax = (dac_size - 1) / fs;
+
+        uint32_t len = static_cast<uint32_t>(std::floor(Tmax / T) * fs / current_frequency);
         len = std::max(uint32_t(2), std::min(len, dac_size));
         current_waveform_len = len;
 
         ctl.write<reg::trig>(((len - 1) << 1) + (1 & ctl.read<reg::trig>()));
 
-        for (uint32_t i = 0; i < data.size(); i++) {
-            const double phase = std::fmod(frequency * i / fs, 1.0);
-            int32_t val2 = 0;
-
-            if (function == 0) {
-                // Original BRAM ramp behaviour
-                val2 = static_cast<int32_t>((2 * phase - 1) * dac_resolution / 2.1);
-                uint32_t val = static_cast<uint32_t>(val2) & 0x3FFF;
-                data[i] = val + (val << 16);
-                continue;
-            }
-
-            if (function == 1) {
-                val2 = static_cast<int32_t>(std::sin(2.0 * pi * phase) * dac_resolution / 2.1);
-            } else if (function == 2) {
-                val2 = static_cast<int32_t>((2 * phase - 1) * dac_resolution / 2.1);
-            } else {
-                val2 = static_cast<int32_t>((2 * std::fabs(2 * phase - 1) - 1) * dac_resolution / 2.1);
-            }
-
-            uint32_t val = static_cast<uint32_t>(val2) & 0x3FFF;
-            data[i] = val + (val << 16);
-        }
-        dac_map.write_array(data);
+        update_dac_waveform();
     }
 
+    void set_output_channel(uint32_t channel) {
+        current_output_channel = std::min(channel, uint32_t(2));
+        update_dac_waveform();
+    }
+
+    uint32_t get_output_channel() const {
+        return current_output_channel;
+    }
+
+    void set_dac_amplitude(double amplitude_vpk) {
+        current_amplitude_vpk = std::max(0.0, std::min(amplitude_vpk, 10.0));
+        update_dac_waveform();
+    }
+
+    double get_dac_amplitude() const {
+        return current_amplitude_vpk;
+    }
+
+    void set_plot_decimation(uint32_t mode, uint32_t max_points) {
+        decimation_mode = std::min(mode, uint32_t(3));
+        const uint32_t max_supported = std::max(dac_size, adc_size);
+        decimation_max_points = std::max(uint32_t(1), std::min(max_points, max_supported));
+    }
+
+    uint32_t get_plot_decimation_mode() const {
+        return decimation_mode;
+    }
+
+    uint32_t get_plot_decimation_max_points() const {
+        return decimation_max_points;
+    }
+
+    uint32_t get_adc_decimation_step() const {
+        return compute_decimation_step(adc_size);
+    }
+
+    uint32_t get_dac_decimation_step() const {
+        return compute_decimation_step(dac_size);
+    }
+
+    // ----------------------------
+    // Module: Snapshot Endpoints
+    // ----------------------------
     std::vector<uint32_t>& get_adc_snapshot() {
         auto arr = get_adc();
         adc_snapshot.assign(arr.begin(), arr.end());
@@ -103,6 +128,9 @@ class AdcDacBram
         dac_map.write_array(data);
     }
 
+    // ----------------------------
+    // Module: ADC Acquisition Endpoints
+    // ----------------------------
     std::array<uint32_t, adc_size> get_adc() {
         trigger_acquisition();
         return adc_map.read_array<uint32_t, adc_size>();
@@ -126,99 +154,282 @@ class AdcDacBram
             static_cast<int32_t>(std::llround(static_cast<double>(acc1) / static_cast<double>(count)))
         );
     }
-    
-    
-   // Read channel and take one point every decim_factor points
-    std::vector<float>& get_decimated_data(uint32_t channel) {
-    	std::array<uint32_t, adc_size> arr=get_adc();
-    	
-    	decimated_data.resize(0);
-    	
-       	if(channel==0) 
-		for (uint32_t value : arr) {
-			decimated_data.push_back(static_cast<float>((((static_cast<int32_t>(value % 16384) - 8192) & 0x3FFF)-8192) )/819.2f);
-	    	}    	
-	else
-		for (uint32_t value : arr) {
-			decimated_data.push_back(static_cast<float>((((static_cast<int32_t>((value>>16) % 16384) - 8192) & 0x3FFF)-8192) )/819.2f);
-	    	}    	
-	
-        return decimated_data;
-    }
 
-    std::vector<float>& get_decimated_dac_data(uint32_t channel) {
-        auto arr = dac_map.read_array<uint32_t, dac_size>();
-        decimated_dac_data.resize(0);
-        decimated_dac_data.reserve(arr.size());
+    // Dedicated RMS endpoint in the driver (independent from the UI processing pipeline).
+    // Returns RMS for IN1 and IN2 in raw ADC counts (14-bit signed domain).
+    std::tuple<float, float> get_adc_rms_data(uint32_t n_samples) {
+        auto arr = get_adc();
+        const uint32_t count = std::max(uint32_t(1), std::min(n_samples, adc_size));
 
-        if (channel == 0) {
-            for (uint32_t value : arr) {
-                int32_t s = static_cast<int32_t>(value & 0x3FFF);
-                if ((s & 0x2000) != 0) {
-                    s -= 0x4000;
-                }
-                decimated_dac_data.push_back(static_cast<float>(s) / 819.2f);
-            }
-        } else {
-            for (uint32_t value : arr) {
-                int32_t s = static_cast<int32_t>((value >> 16) & 0x3FFF);
-                if ((s & 0x2000) != 0) {
-                    s -= 0x4000;
-                }
-                decimated_dac_data.push_back(static_cast<float>(s) / 819.2f);
-            }
+        double acc0 = 0.0;
+        double acc1 = 0.0;
+
+        for (uint32_t i = 0; i < count; i++) {
+            const uint32_t value = arr[i];
+            const int32_t s0 = ((static_cast<int32_t>(value % 16384) - 8192) & 0x3FFF) - 8192;
+            const int32_t s1 = ((static_cast<int32_t>((value >> 16) % 16384) - 8192) & 0x3FFF) - 8192;
+
+            acc0 += static_cast<double>(s0) * static_cast<double>(s0);
+            acc1 += static_cast<double>(s1) * static_cast<double>(s1);
         }
 
-        return decimated_dac_data;
+        const float rms0 = static_cast<float>(std::sqrt(acc0 / static_cast<double>(count)));
+        const float rms1 = static_cast<float>(std::sqrt(acc1 / static_cast<double>(count)));
+        return std::make_tuple(rms0, rms1);
     }
-    
+
+    // ----------------------------
+    // Module: Decimated Data Endpoints (index-exact XY)
+    // ----------------------------
+    std::vector<float>& get_decimated_data_xy(uint32_t channel) {
+        const auto arr = get_adc();
+        const uint32_t safe_channel = std::min(channel, uint32_t(1));
+
+        const auto sample_at = [&](uint32_t index) -> float {
+            return adc_sample_to_volts(arr[index], safe_channel);
+        };
+
+        return build_decimated_xy(static_cast<uint32_t>(arr.size()), sample_at, decimated_data_xy);
+    }
+
+    std::vector<float>& get_decimated_dac_data_xy(uint32_t channel) {
+        const auto arr = dac_map.read_array<uint32_t, dac_size>();
+        const uint32_t safe_channel = std::min(channel, uint32_t(1));
+
+        const auto sample_at = [&](uint32_t index) -> float {
+            return dac_sample_to_volts(arr[index], safe_channel);
+        };
+
+        return build_decimated_xy(static_cast<uint32_t>(arr.size()), sample_at, decimated_dac_data_xy);
+    }
+
+    // ----------------------------
+    // Module: Driver Metadata Endpoints
+    // ----------------------------
     std::string get_config_as_text() const {
-        double f=current_frequency;
-        double T=1/f;
-        double Tmax=(dac_size-1)/fs;
+        const double f = current_frequency;
+        const double T = 1.0 / f;
+        const double Tmax = (dac_size - 1) / fs;
 
         std::ostringstream oss;
-        const char* function_name = "BRAM-Rampe (0)";
+        const char* function_name = "BRAM Ramp (0)";
         if (current_function == 1) {
-            function_name = "Sinus (1)";
+            function_name = "Sine (1)";
         } else if (current_function == 2) {
-            function_name = "Saegezahn (2)";
+            function_name = "Sawtooth (2)";
         } else if (current_function == 3) {
-            function_name = "Dreieck (3)";
+            function_name = "Triangle (3)";
         }
 
-        oss << "--- Aktuelle DAC-Konfiguration ---\n";
-        oss << "  Funktion: " << function_name << "\n";
-        oss << "  Gesamte Speicherlänge: " << Tmax*1000<< "ms ("<< dac_size <<" Sampes) \n";
-        oss << "  Min Frequenz: " << 1/(Tmax*1000)<< "kHz \n";
-        oss << "  Perioden: " << std::floor(Tmax/T) << "\n";
-        oss << "  Datenpunkte: " << std::floor(Tmax/T)*fs/f << "\n";
-        oss << "  Aktuelle Frequenz: " << current_frequency/1000 << " kHz\n";
-        oss << "  Wellenform-Länge (len): " << current_waveform_len << " Samples";
+        oss << "--- Current DAC Configuration ---\n";
+        oss << "  Function: " << function_name << "\n";
+        oss << "  Total memory span: " << Tmax * 1000 << "ms (" << dac_size << " samples)\n";
+        oss << "  Minimum frequency: " << 1 / (Tmax * 1000) << "kHz\n";
+        oss << "  Periods: " << std::floor(Tmax / T) << "\n";
+        oss << "  Data points: " << std::floor(Tmax / T) * fs / f << "\n";
+        oss << "  Current frequency: " << current_frequency / 1000 << " kHz\n";
+        oss << "  Waveform length (len): " << current_waveform_len << " samples\n";
+        oss << "  Output channel: " << current_output_channel << " (0=OUT1, 1=OUT2, 2=both)\n";
+        oss << "  Amplitude: " << current_amplitude_vpk << " Vpk\n";
+        const char* decimation_mode_name = "Off (1:1)";
+        if (decimation_mode == 1) {
+            decimation_mode_name = "Stride";
+        } else if (decimation_mode == 2) {
+            decimation_mode_name = "Min/Max envelope";
+        } else if (decimation_mode == 3) {
+            decimation_mode_name = "Mean Bucket";
+        }
+        oss << "  Plot-Decimation Mode: " << decimation_mode_name << "\n";
+        oss << "  Plot-Decimation N_plot_max: " << decimation_max_points << "\n";
+        oss << "  ADC-Decimation Step: " << get_adc_decimation_step() << "\n";
+        oss << "  DAC-Decimation Step: " << get_dac_decimation_step();
         return oss.str();
     }
 
     uint32_t getlen() {
         return current_waveform_len;
     }
-    
 
-
- private:
+  private:
+    // ----------------------------
+    // State: MMIO Handles + Runtime Buffers
+    // ----------------------------
     Context& ctx;
     Memory<mem::control>& ctl;
     Memory<mem::status>& sts;
     Memory<mem::adc>& adc_map;
     Memory<mem::dac>& dac_map;
-    std::vector<float> decimated_data;
-    std::vector<float> decimated_dac_data;
+    std::vector<float> decimated_data_xy;
+    std::vector<float> decimated_dac_data_xy;
     std::vector<uint32_t> adc_snapshot;
     std::vector<uint32_t> dac_snapshot;
-    uint32_t current_function;
-    double current_frequency;
-    uint32_t current_waveform_len;
-    const double fs=125000000;
-    const uint32_t dac_resolution=1<<14;
+    uint32_t current_function = 1;
+    double current_frequency = 10000.0;
+    uint32_t current_waveform_len = dac_size;
+    uint32_t current_output_channel = 0;
+    double current_amplitude_vpk = 10.0;
+    uint32_t decimation_mode = 1; // 0=Off, 1=Stride, 2=MinMax, 3=Mean
+    uint32_t decimation_max_points = 2048;
+    const double fs = 125000000;
+    const uint32_t dac_resolution = 1 << 14;
+
+    uint32_t compute_decimation_step(uint32_t raw_length) const {
+        const uint32_t n = std::max(uint32_t(1), raw_length);
+        if (decimation_mode == 0) {
+            return 1;
+        }
+        const uint32_t max_points = std::max(uint32_t(1), decimation_max_points);
+        const uint32_t target_points = (decimation_mode == 2)
+            ? std::max(uint32_t(1), max_points / 2)
+            : max_points;
+        return std::max(uint32_t(1), (n + target_points - 1) / target_points);
+    }
+
+    int32_t decode_signed14(uint32_t raw14) const {
+        int32_t s = static_cast<int32_t>(raw14 & 0x3FFF);
+        if ((s & 0x2000) != 0) {
+            s -= 0x4000;
+        }
+        return s;
+    }
+
+    float adc_sample_to_volts(uint32_t packed_sample, uint32_t channel) const {
+        const uint32_t raw14 = (channel == 0)
+            ? (packed_sample & 0x3FFF)
+            : ((packed_sample >> 16) & 0x3FFF);
+        return static_cast<float>(decode_signed14(raw14)) / 819.2f;
+    }
+
+    float dac_sample_to_volts(uint32_t packed_sample, uint32_t channel) const {
+        const uint32_t raw14 = (channel == 0)
+            ? (packed_sample & 0x3FFF)
+            : ((packed_sample >> 16) & 0x3FFF);
+        return static_cast<float>(decode_signed14(raw14)) / 819.2f;
+    }
+
+    template<typename SampleAt>
+    std::vector<float>& build_decimated_xy(uint32_t raw_size, const SampleAt& sample_at, std::vector<float>& out_xy) {
+        out_xy.clear();
+        if (raw_size == 0) {
+            return out_xy;
+        }
+
+        const uint32_t step = compute_decimation_step(raw_size);
+        const uint32_t buckets = (raw_size + step - 1) / step;
+
+        if (decimation_mode == 0) {
+            out_xy.reserve(2 * raw_size);
+        } else if (decimation_mode == 2) {
+            out_xy.reserve(4 * buckets);
+        } else {
+            out_xy.reserve(2 * buckets);
+        }
+
+        const auto push_xy = [&](float x, float y) {
+            out_xy.push_back(x);
+            out_xy.push_back(y);
+        };
+
+        if (decimation_mode == 0 || decimation_mode == 1) {
+            const uint32_t loop_step = (decimation_mode == 0) ? 1 : step;
+            for (uint32_t i = 0; i < raw_size; i += loop_step) {
+                push_xy(static_cast<float>(i), sample_at(i));
+            }
+            return out_xy;
+        }
+
+        for (uint32_t start = 0; start < raw_size; start += step) {
+            const uint32_t end = std::min(raw_size, start + step);
+
+            if (decimation_mode == 3) {
+                double sum = 0.0;
+                for (uint32_t i = start; i < end; i++) {
+                    sum += static_cast<double>(sample_at(i));
+                }
+                const float mean = static_cast<float>(sum / static_cast<double>(std::max(uint32_t(1), end - start)));
+                push_xy(static_cast<float>(start), mean);
+                continue;
+            }
+
+            float min_v = sample_at(start);
+            float max_v = min_v;
+            uint32_t min_i = start;
+            uint32_t max_i = start;
+
+            for (uint32_t i = start + 1; i < end; i++) {
+                const float value = sample_at(i);
+                if (value < min_v) {
+                    min_v = value;
+                    min_i = i;
+                }
+                if (value > max_v) {
+                    max_v = value;
+                    max_i = i;
+                }
+            }
+
+            if (min_i == max_i) {
+                push_xy(static_cast<float>(min_i), min_v);
+            } else if (min_i < max_i) {
+                push_xy(static_cast<float>(min_i), min_v);
+                push_xy(static_cast<float>(max_i), max_v);
+            } else {
+                push_xy(static_cast<float>(max_i), max_v);
+                push_xy(static_cast<float>(min_i), min_v);
+            }
+        }
+
+        return out_xy;
+    }
+
+    // ----------------------------
+    // Module: DAC Waveform Synthesis Helpers
+    // ----------------------------
+    int32_t build_wave_sample(uint32_t function, double phase) const {
+        constexpr double pi = 3.14159265358979323846;
+        double normalized = 0.0;
+
+        if (function == 0) {
+            normalized = 2.0 * phase - 1.0;
+        } else if (function == 1) {
+            normalized = std::sin(2.0 * pi * phase);
+        } else if (function == 2) {
+            normalized = 2.0 * phase - 1.0;
+        } else {
+            normalized = 2.0 * std::fabs(2.0 * phase - 1.0) - 1.0;
+        }
+
+        const double full_scale = static_cast<double>(dac_resolution) / 2.1;
+        const double amplitude_scale = current_amplitude_vpk / 10.0;
+        return static_cast<int32_t>(std::llround(normalized * full_scale * amplitude_scale));
+    }
+
+    // ----------------------------
+    // Module: DAC Memory Writer
+    // ----------------------------
+    void update_dac_waveform() {
+        std::array<uint32_t, dac_size> data;
+
+        for (uint32_t i = 0; i < data.size(); i++) {
+            const double phase = std::fmod(current_frequency * i / fs, 1.0);
+            const int32_t sample14s = build_wave_sample(current_function, phase);
+            const uint32_t encoded = static_cast<uint32_t>(sample14s) & 0x3FFF;
+
+            uint32_t out1 = 0;
+            uint32_t out2 = 0;
+
+            if (current_output_channel == 0 || current_output_channel == 2) {
+                out1 = encoded;
+            }
+            if (current_output_channel == 1 || current_output_channel == 2) {
+                out2 = encoded;
+            }
+
+            data[i] = out1 + (out2 << 16);
+        }
+
+        dac_map.write_array(data);
+    }
 
 }; // class AdcDacBram
 
