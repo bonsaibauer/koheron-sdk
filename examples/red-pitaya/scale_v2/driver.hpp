@@ -9,8 +9,6 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
-#include <string>
-#include <sstream>
 #include <tuple>
 #include <vector>
 
@@ -109,21 +107,6 @@ class AdcDacBram {
         return compute_decimation_step(dac_size);
     }
 
-    // ----------------------------
-    // Module: Snapshot Endpoints
-    // ----------------------------
-    std::vector<uint32_t>& get_adc_snapshot() {
-        auto arr = get_adc();
-        adc_snapshot.assign(arr.begin(), arr.end());
-        return adc_snapshot;
-    }
-
-    std::vector<uint32_t>& get_dac_snapshot() {
-        auto arr = dac_map.read_array<uint32_t, dac_size>();
-        dac_snapshot.assign(arr.begin(), arr.end());
-        return dac_snapshot;
-    }
-
     void set_dac_data(const std::array<uint32_t, dac_size>& data) {
         dac_map.write_array(data);
     }
@@ -134,25 +117,6 @@ class AdcDacBram {
     std::array<uint32_t, adc_size> get_adc() {
         trigger_acquisition();
         return adc_map.read_array<uint32_t, adc_size>();
-    }
-
-    std::tuple<int32_t, int32_t> get_adc_raw_data(uint32_t n_avg) {
-        auto arr = get_adc();
-        const uint32_t count = std::max(uint32_t(1), std::min(n_avg, adc_size));
-
-        int64_t acc0 = 0;
-        int64_t acc1 = 0;
-
-        for (uint32_t i = 0; i < count; i++) {
-            const uint32_t value = arr[i];
-            acc0 += ((static_cast<int32_t>(value % 16384) - 8192) & 0x3FFF) - 8192;
-            acc1 += ((static_cast<int32_t>((value >> 16) % 16384) - 8192) & 0x3FFF) - 8192;
-        }
-
-        return std::make_tuple(
-            static_cast<int32_t>(std::llround(static_cast<double>(acc0) / static_cast<double>(count))),
-            static_cast<int32_t>(std::llround(static_cast<double>(acc1) / static_cast<double>(count)))
-        );
     }
 
     // Dedicated RMS endpoint in the driver (independent from the UI processing pipeline).
@@ -176,6 +140,44 @@ class AdcDacBram {
         const float rms0 = static_cast<float>(std::sqrt(acc0 / static_cast<double>(count)));
         const float rms1 = static_cast<float>(std::sqrt(acc1 / static_cast<double>(count)));
         return std::make_tuple(rms0, rms1);
+    }
+
+    // True RMS with balanced sampling around zero crossing.
+    // Uses up to 4000 samples >= 0 and 4000 samples < 0 based on IN1 sign.
+    // Returns RMS(IN1), RMS(IN2), N_pos, N_neg.
+    std::tuple<float, float, uint32_t, uint32_t> get_adc_true_rms_data() {
+        auto arr = get_adc();
+        constexpr uint32_t target_per_side = 4000;
+
+        double acc0 = 0.0;
+        double acc1 = 0.0;
+        uint32_t n_pos = 0;
+        uint32_t n_neg = 0;
+
+        for (uint32_t i = 0; i < adc_size; i++) {
+            const uint32_t value = arr[i];
+            const int32_t s0 = ((static_cast<int32_t>(value % 16384) - 8192) & 0x3FFF) - 8192;
+            const int32_t s1 = ((static_cast<int32_t>((value >> 16) % 16384) - 8192) & 0x3FFF) - 8192;
+
+            if (s0 >= 0 && n_pos < target_per_side) {
+                acc0 += static_cast<double>(s0) * static_cast<double>(s0);
+                acc1 += static_cast<double>(s1) * static_cast<double>(s1);
+                n_pos++;
+            } else if (s0 < 0 && n_neg < target_per_side) {
+                acc0 += static_cast<double>(s0) * static_cast<double>(s0);
+                acc1 += static_cast<double>(s1) * static_cast<double>(s1);
+                n_neg++;
+            }
+
+            if (n_pos >= target_per_side && n_neg >= target_per_side) {
+                break;
+            }
+        }
+
+        const uint32_t count = std::max(uint32_t(1), n_pos + n_neg);
+        const float rms0 = static_cast<float>(std::sqrt(acc0 / static_cast<double>(count)));
+        const float rms1 = static_cast<float>(std::sqrt(acc1 / static_cast<double>(count)));
+        return std::make_tuple(rms0, rms1, n_pos, n_neg);
     }
 
     // ----------------------------
@@ -203,53 +205,6 @@ class AdcDacBram {
         return build_decimated_xy(arr.size(), sample_at, decimated_dac_data_xy);
     }
 
-    // ----------------------------
-    // Module: Driver Metadata Endpoints
-    // ----------------------------
-    std::string get_config_as_text() const {
-        const double f = current_frequency;
-        const double T = 1.0 / f;
-        const double Tmax = (dac_size - 1) / fs;
-
-        std::ostringstream oss;
-        const char* function_name = "BRAM Ramp (0)";
-        if (current_function == 1) {
-            function_name = "Sine (1)";
-        } else if (current_function == 2) {
-            function_name = "Sawtooth (2)";
-        } else if (current_function == 3) {
-            function_name = "Triangle (3)";
-        }
-
-        oss << "--- Current DAC Configuration ---\n";
-        oss << "  Function: " << function_name << "\n";
-        oss << "  Total memory span: " << Tmax * 1000 << "ms (" << dac_size << " samples)\n";
-        oss << "  Minimum frequency: " << 1 / (Tmax * 1000) << "kHz\n";
-        oss << "  Periods: " << std::floor(Tmax / T) << "\n";
-        oss << "  Data points: " << std::floor(Tmax / T) * fs / f << "\n";
-        oss << "  Current frequency: " << current_frequency / 1000 << " kHz\n";
-        oss << "  Waveform length (len): " << current_waveform_len << " samples\n";
-        oss << "  Output channel: " << current_output_channel << " (0=OUT1, 1=OUT2, 2=both)\n";
-        oss << "  Amplitude: " << current_amplitude_vpk << " Vpk\n";
-        const char* decimation_mode_name = "Off (1:1)";
-        if (decimation_mode == 1) {
-            decimation_mode_name = "Stride";
-        } else if (decimation_mode == 2) {
-            decimation_mode_name = "Min/Max envelope";
-        } else if (decimation_mode == 3) {
-            decimation_mode_name = "Mean Bucket";
-        }
-        oss << "  Plot-Decimation Mode: " << decimation_mode_name << "\n";
-        oss << "  Plot-Decimation N_plot_max: " << decimation_max_points << "\n";
-        oss << "  ADC-Decimation Step: " << get_adc_decimation_step() << "\n";
-        oss << "  DAC-Decimation Step: " << get_dac_decimation_step();
-        return oss.str();
-    }
-
-    uint32_t getlen() {
-        return current_waveform_len;
-    }
-
   private:
     // ----------------------------
     // State: MMIO Handles + Runtime Buffers
@@ -261,8 +216,6 @@ class AdcDacBram {
     Memory<mem::dac>& dac_map;
     std::vector<float> decimated_data_xy;
     std::vector<float> decimated_dac_data_xy;
-    std::vector<uint32_t> adc_snapshot;
-    std::vector<uint32_t> dac_snapshot;
     uint32_t current_function = 1;
     double current_frequency = 10000.0;
     uint32_t current_waveform_len = dac_size;

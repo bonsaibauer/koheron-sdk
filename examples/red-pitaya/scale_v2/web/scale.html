@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Koheron | Scale v2 Diagnostics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="author" content="Koheron">
+  <meta charset="utf-8">
+
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <script type="text/javascript" src="html-imports.min.js"></script>
+
+  <link rel="shortcut icon" href="kbird.ico">
+  <link rel="stylesheet" type="text/css" href="bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="_koheron.css">
+  <link rel="stylesheet" type="text/css" href="main.css">
+
+  <script type="text/javascript" src="jquery.min.js"></script>
+  <script type="text/javascript" src="bootstrap.min.js"></script>
+
+  <link rel="import" href="navigation.html" data-parent="navigation">
+  <link rel="import" href="plot-basics.html" data-parent="plot-basics">
+</head>
+
+<body>
+
+  <div id="navigation"></div>
+
+  <div class="container-fluid" id="main">
+
+    <div class="row">
+      <div class="col-md-8">
+        <!-- Module: Plot + Curve UI -->
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Curves</span></div>
+          <div class="row">
+            <div class="col-sm-6">
+              <div><label><input type="checkbox" id="curve-in1"> IN1</label></div>
+              <div><label><input type="checkbox" id="curve-in2"> IN2</label></div>
+              <div><label><input type="checkbox" id="curve-out1"> OUT1</label></div>
+            </div>
+            <div class="col-sm-6">
+              <div><label><input type="checkbox" id="curve-out2"> OUT2</label></div>
+              <div><label><input type="checkbox" id="curve-feature"> Feature-Trace</label></div>
+              <div><label><input type="checkbox" id="curve-weight"> Weight-Trace</label></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Module: Runtime Plot -->
+        <section class="panel panel-default plot-panel">
+          <div class="panel-heading">
+            <strong>Diagnostics Plot</strong>
+          </div>
+          <div class="panel-body">
+            <div id="plot-placeholder" class="plot-placeholder"></div>
+            <div id="plot-basics"></div>
+          </div>
+        </section>
+
+        <!-- Module: Plot Actions -->
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>View</span></div>
+          <div class="form-group">
+            <label for="plot-mode">Plot mode</label>
+            <select id="plot-mode" class="form-control">
+              <option value="signals" selected>Signals (IN/OUT + Feature/Weight)</option>
+              <option value="module_pipeline">Module pipeline (Phase 2-5)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="plot-decimation-method">Decimation method</label>
+            <select id="plot-decimation-method" class="form-control">
+              <option value="stride" selected>Stride</option>
+              <option value="minmax">Min/Max envelope</option>
+              <option value="mean">Mean Bucket</option>
+              <option value="none">Off (1:1)</option>
+            </select>
+          </div>
+          <button id="btn-plot-reset-view" class="btn btn-primary btn-block">Default view</button>
+        </section>
+
+        <!-- Module: Scale Panel -->
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Scale</span></div>
+          <div style="font-size: 3.2em; font-weight: 700; margin-bottom: 8px;">
+            <span id="weight-value">0.000</span> <span id="weight-unit" style="font-size: 0.45em;">kg</span>
+          </div>
+          <button id="btn-tare" class="btn btn-warning btn-block">Tare (set zero)</button>
+          <div style="margin-top: 14px;">
+            <div class="form-group">
+              <label for="input-calibration">Calibration factor k (kg per feature unit)</label>
+              <input type="number" id="input-calibration" class="form-control" value="0.0005" step="0.0001">
+            </div>
+            <button id="btn-save-scale" class="btn btn-success btn-block">Apply calibration</button>
+            <div style="margin-top:8px;">Feature tare: <strong id="scale-tare-feature">0.0000</strong></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="col-md-4">
+        <!-- Module: Signal Source Panel -->
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Signal Source</span></div>
+          <div><strong>Phase 1: Excitation synthesis</strong></div>
+          <div class="form-group" style="margin-top:8px;">
+            <label for="signal-mode">Method</label>
+            <select id="signal-mode" class="form-control">
+              <option value="1" selected>Sine</option>
+              <option value="0">BRAM Ramp (Original)</option>
+              <option value="2">Sawtooth</option>
+              <option value="3">Triangle</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="output-channel">Output channel</label>
+            <select id="output-channel" class="form-control">
+              <option value="0" selected>OUT1</option>
+              <option value="1">OUT2</option>
+              <option value="2">OUT1 + OUT2</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="signal-amplitude">Amplitude (Vpk)</label>
+            <input type="text" id="signal-amplitude" class="form-control" value="1.000,0 Vpp">
+          </div>
+          <div class="form-group">
+            <label for="signal-frequency">Frequency</label>
+            <input type="text" id="signal-frequency" class="form-control" value="100.000,000,000 kHz">
+          </div>
+        </section>
+
+        <!-- Module: Driver Panel -->
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Driver Functions (global)</span></div>
+          <div class="form-group">
+            <label for="driver-action">Method</label>
+            <select id="driver-action" class="form-control">
+              <option value="rms" selected>RMS</option>
+              <option value="true_rms">True RMS</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="driver-refresh-mode">Refresh</label>
+            <select id="driver-refresh-mode" class="form-control">
+              <option value="off" selected>Off</option>
+              <option value="1hz">1 Hz</option>
+              <option value="5hz">5 Hz</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="driver-samples">Samples (fixed)</label>
+            <input type="number" id="driver-samples" class="form-control" value="8000" min="8000" max="8000" step="1" readonly>
+          </div>
+          <button id="btn-driver-run" class="btn btn-default btn-block">Run</button>
+          <div style="margin-top:8px; font-size:12px; color:#777;">True RMS uses 8000 samples with 4000 above and 4000 below the zero point.</div>
+          <pre id="driver-output" style="margin-top:8px; max-height:200px; overflow:auto; white-space:pre-wrap;">Ready.</pre>
+        </section>
+
+        <!-- Module: Workflow Panel -->
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Workflow (modular)</span></div>
+          <div><strong>Phase 2: Data acquisition and ADC digitization</strong></div>
+          <div class="form-group" style="margin-top:6px;">
+            <label for="phase2-input">Input</label>
+            <select id="phase2-input" class="form-control">
+              <option value="in1" selected>IN1</option>
+              <option value="in2">IN2</option>
+              <option value="in1_minus_in2">IN1 - IN2</option>
+              <option value="in1_div_in2">IN1 / IN2</option>
+            </select>
+          </div>
+
+          <div><strong>Phase 3: Feature extraction</strong></div>
+          <div class="form-group" style="margin-top:6px;">
+            <label for="phase3-feature">Method</label>
+            <select id="phase3-feature" class="form-control">
+              <option value="rms" selected>RMS</option>
+              <option value="true_rms">True RMS</option>
+            </select>
+          </div>
+
+          <div><strong>Phase 4: Metrological calibration</strong></div>
+          <div class="form-group" style="margin-top:6px;">
+            <label for="phase4-calibration">Method</label>
+            <select id="phase4-calibration" class="form-control">
+              <option value="tare_scale" selected>Tare + k (linear)</option>
+              <option value="tare_only">Tare only</option>
+              <option value="scale_only">k only</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+
+          <div><strong>Phase 5: Statistical post-processing</strong></div>
+          <div class="form-group" style="margin-top:6px;">
+            <label for="phase5-smoothing">Method</label>
+            <select id="phase5-smoothing" class="form-control">
+              <option value="none" selected>Off</option>
+              <option value="moving_average">Moving Average</option>
+              <option value="ema">EMA</option>
+            </select>
+          </div>
+
+        </section>
+
+        <!-- Module: Formula + Parameter Panel -->
+        <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
+          <div class="crossed"><span>Formulas & Parameters</span></div>
+          <div><strong>Active source formula (Phase 1)</strong></div>
+          <div id="formula-source" style="margin-bottom:10px;">f_eff = clamp(f_cmd, 1, fs/2), A_eff = clamp(A_cmd, 0, 10)</div>
+
+          <div><strong>Active input formula (Phase 2)</strong></div>
+          <div id="formula-input" style="margin-bottom:10px;">x[i] = IN1_V[i]</div>
+          <div class="form-group" id="division-epsilon-group" style="display:none;">
+            <label for="division-epsilon">Division Guard epsilon (V)</label>
+            <input type="number" id="division-epsilon" class="form-control" value="0.01" min="0.000001" max="5" step="0.001">
+          </div>
+          <div class="form-group" id="division-clip-group" style="display:none;">
+            <label for="division-clip">Division Clip |IN1/IN2| max</label>
+            <input type="number" id="division-clip" class="form-control" value="100" min="0.1" max="1000000" step="0.1">
+          </div>
+
+          <div><strong>Active feature formula</strong></div>
+          <div id="formula-feature" style="margin-bottom:10px;">RMS = sqrt((1/N) * sum(x^2))</div>
+          <div class="form-group">
+            <label for="rms-window-samples">Feature window N (samples)</label>
+            <input type="number" id="rms-window-samples" class="form-control" value="8000" min="8000" max="16384" step="16">
+          </div>
+
+          <div><strong>Active calibration formula (Phase 4)</strong></div>
+          <div id="formula-calibration" style="margin-bottom:10px;">Weight = (Feature - Feature_tare) * k</div>
+
+          <div><strong>Active smoothing formula (Phase 5)</strong></div>
+          <div id="formula-smoothing" style="margin-bottom:10px;">Off</div>
+          <div class="form-group" id="smoothing-window-group" style="display:none;">
+            <label for="smoothing-window">Moving Average M (Frames)</label>
+            <input type="number" id="smoothing-window" class="form-control" value="5" min="1" max="100" step="1">
+          </div>
+          <div class="form-group" id="smoothing-alpha-group" style="display:none;">
+            <label for="smoothing-alpha">EMA alpha</label>
+            <input type="number" id="smoothing-alpha" class="form-control" value="0.2" min="0.01" max="1" step="0.01">
+          </div>
+
+          <div><strong>Active plot decimation</strong></div>
+          <div id="formula-plot" style="margin-bottom:10px;">Driver decimation active, X = exact sample index</div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label for="plot-max-points">Plot max points</label>
+            <input type="number" id="plot-max-points" class="form-control" value="2048" min="128" max="20000" step="128">
+          </div>
+        </section>
+
+        <!-- Module: Live Calculation Trace -->
+        <section class="panel panel-default" style="padding:12px;">
+          <div class="crossed"><span>Live Processing Trace</span></div>
+          <div>Signal source: <strong id="live-source">Sine -> OUT1</strong></div>
+          <div>Driver action: <strong id="live-driver-action">Off</strong></div>
+          <div>Driver result: <strong id="live-driver-result">Ready.</strong></div>
+          <div>Driver clamp: <strong id="live-source-clamp">f_eff/A_eff from clamp</strong></div>
+          <div>DAC scaling: <strong id="live-dac-formula">sample14 = round(norm * (2^14/2.1) * (A_eff/10))</strong></div>
+
+          <div>ADC conversion: <strong id="live-adc-formula">IN_V = ADC_code / 819.2 (14-bit signed)</strong></div>
+          <div>ADC input: <strong id="live-input">IN1</strong></div>
+          <div>Phase-2 input: <strong id="live-input-formula">x[i] = IN1_V[i]</strong></div>
+          <div>Division guard: <strong id="live-input-guard">Off</strong></div>
+
+          <div>Feature formula: <strong id="live-feature-formula">RMS = sqrt((1/N) * sum(x^2))</strong></div>
+          <div>Lock-in parameters: <strong id="live-lockin-params">Off</strong></div>
+          <div>Feature raw: <strong id="live-feature-raw">0.0000</strong></div>
+          <div>Feature used: <strong id="live-feature-used">0.0000</strong></div>
+
+          <div>Calibration formula: <strong id="live-calibration-formula">Weight = (Feature - Feature_tare) * k</strong></div>
+          <div>Calibration evaluation: <strong id="live-calibration-eval">Weight = (0.0000 - 0.0000) * 0.000500 = 0.0000</strong></div>
+          <div>Feature tare: <strong id="live-feature-tare">0.0000</strong></div>
+          <div>k: <strong id="live-k-factor">0.0005</strong></div>
+          <div>Weight (raw): <strong id="live-weight-raw">0.0000</strong></div>
+
+          <div>Smoothing formula: <strong id="live-smoothing-formula">Off</strong></div>
+          <div>Smoothing evaluation: <strong id="live-smoothing-eval">Off</strong></div>
+          <div>Weight (output): <strong id="live-weight-used">0.0000</strong></div>
+
+          <div>Plot decimation: <strong id="live-plot-decimation">Mode=Signals, Method=Stride, X=index exact</strong></div>
+          <div>RMS IN1 / IN2 (diag.): <strong id="live-rms-in12">0.0000 / 0.0000</strong></div>
+          <div>RMS OUT1 / OUT2 (diag.): <strong id="live-rms-out12">0.0000 / 0.0000</strong></div>
+        </section>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+
+  <script language="javascript" type="text/javascript" src="jquery.flot.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.resize.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.selection.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.time.js"></script>
+  <script language="javascript" type="text/javascript" src="jquery.flot.axislabels.js"></script>
+
+</body>
+
+</html>
