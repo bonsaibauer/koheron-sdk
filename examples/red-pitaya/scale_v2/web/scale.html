@@ -44,8 +44,8 @@
             </div>
             <div class="col-sm-6">
               <div><label><input type="checkbox" id="curve-out2"> OUT2</label></div>
-              <div><label><input type="checkbox" id="curve-feature"> Feature-Trace</label></div>
-              <div><label><input type="checkbox" id="curve-weight"> Weight-Trace</label></div>
+              <div><label><input type="checkbox" id="curve-feature"> Feature (RMS/True RMS)</label></div>
+              <div><label><input type="checkbox" id="curve-weight"> Weight</label></div>
             </div>
           </div>
         </section>
@@ -65,13 +65,6 @@
         <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
           <div class="crossed"><span>View</span></div>
           <div class="form-group">
-            <label for="plot-mode">Plot mode</label>
-            <select id="plot-mode" class="form-control">
-              <option value="signals" selected>Signals (IN/OUT + Feature/Weight)</option>
-              <option value="module_pipeline">Module pipeline (Phase 2-5)</option>
-            </select>
-          </div>
-          <div class="form-group">
             <label for="plot-decimation-method">Decimation method</label>
             <select id="plot-decimation-method" class="form-control">
               <option value="stride" selected>Stride</option>
@@ -80,6 +73,7 @@
               <option value="none">Off (1:1)</option>
             </select>
           </div>
+          <div style="margin:8px 0;">Plot decimation: <strong id="live-plot-decimation">Method=Stride, X=running time</strong></div>
           <button id="btn-plot-reset-view" class="btn btn-primary btn-block">Default view</button>
         </section>
 
@@ -106,15 +100,7 @@
         <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
           <div class="crossed"><span>Signal Source</span></div>
           <div><strong>Phase 1: Excitation synthesis</strong></div>
-          <div class="form-group" style="margin-top:8px;">
-            <label for="signal-mode">Method</label>
-            <select id="signal-mode" class="form-control">
-              <option value="1" selected>Sine</option>
-              <option value="0">BRAM Ramp (Original)</option>
-              <option value="2">Sawtooth</option>
-              <option value="3">Triangle</option>
-            </select>
-          </div>
+          <div style="margin-top:8px; margin-bottom:10px;"><strong>Signal:</strong> Sine (fixed)</div>
           <div class="form-group">
             <label for="output-channel">Output channel</label>
             <select id="output-channel" class="form-control">
@@ -124,13 +110,17 @@
             </select>
           </div>
           <div class="form-group">
-            <label for="signal-amplitude">Amplitude (Vpk)</label>
-            <input type="text" id="signal-amplitude" class="form-control" value="1.000,0 Vpp">
+            <label for="signal-amplitude">Amplitude (Vpp)</label>
+            <input type="text" id="signal-amplitude" class="form-control" value="1.0 Vpp">
           </div>
           <div class="form-group">
             <label for="signal-frequency">Frequency</label>
-            <input type="text" id="signal-frequency" class="form-control" value="100.000,000,000 kHz">
+            <input type="text" id="signal-frequency" class="form-control" value="100 kHz">
           </div>
+          <button id="btn-phase1-save" class="btn btn-primary btn-block">Save Phase 1</button>
+          <div style="margin-top:10px;">Signal source: <strong id="live-source">Sine -> OUT1</strong></div>
+          <div>Driver clamp: <strong id="live-source-clamp">f_eff/A_eff from clamp</strong></div>
+          <div>DAC scaling: <strong id="live-dac-formula">sample14 = round(sin(2*pi*phase) * (2^14/2.1) * (A_vpk/10))</strong></div>
         </section>
 
         <!-- Module: Driver Panel -->
@@ -157,6 +147,10 @@
           </div>
           <button id="btn-driver-run" class="btn btn-default btn-block">Run</button>
           <div style="margin-top:8px; font-size:12px; color:#777;">True RMS uses 8000 samples with 4000 above and 4000 below the zero point.</div>
+          <div style="margin-top:8px;">Driver action: <strong id="live-driver-action">Off</strong></div>
+          <div>Driver result: <strong id="live-driver-result">Ready.</strong></div>
+          <div>RMS IN1 / IN2 (diag.): <strong id="live-rms-in12">0.0000 / 0.0000</strong></div>
+          <div>RMS OUT1 / OUT2 (diag.): <strong id="live-rms-out12">0.0000 / 0.0000</strong></div>
           <pre id="driver-output" style="margin-top:8px; max-height:200px; overflow:auto; white-space:pre-wrap;">Ready.</pre>
         </section>
 
@@ -173,6 +167,11 @@
               <option value="in1_div_in2">IN1 / IN2</option>
             </select>
           </div>
+          <button id="btn-phase2-save" class="btn btn-default btn-block" style="margin-bottom:10px;">Save Phase 2</button>
+          <div>ADC conversion: <strong id="live-adc-formula">IN_V = ADC_code / 819.2 (14-bit signed)</strong></div>
+          <div>ADC input: <strong id="live-input">IN1</strong></div>
+          <div>Phase-2 input: <strong id="live-input-formula">x[i] = IN1_V[i]</strong></div>
+          <div>Division guard: <strong id="live-input-guard">Off</strong></div>
 
           <div><strong>Phase 3: Feature extraction</strong></div>
           <div class="form-group" style="margin-top:6px;">
@@ -182,6 +181,11 @@
               <option value="true_rms">True RMS</option>
             </select>
           </div>
+          <button id="btn-phase3-save" class="btn btn-default btn-block" style="margin-bottom:10px;">Save Phase 3</button>
+          <div>Feature formula: <strong id="live-feature-formula">RMS = sqrt((1/N) * sum(x^2))</strong></div>
+          <div>Lock-in parameters: <strong id="live-lockin-params">Off</strong></div>
+          <div>Feature raw: <strong id="live-feature-raw">0.0000</strong></div>
+          <div>Feature used: <strong id="live-feature-used">0.0000</strong></div>
 
           <div><strong>Phase 4: Metrological calibration</strong></div>
           <div class="form-group" style="margin-top:6px;">
@@ -193,6 +197,12 @@
               <option value="off">Off</option>
             </select>
           </div>
+          <button id="btn-phase4-save" class="btn btn-default btn-block" style="margin-bottom:10px;">Save Phase 4</button>
+          <div>Calibration formula: <strong id="live-calibration-formula">Weight = (Feature - Feature_tare) * k</strong></div>
+          <div>Calibration evaluation: <strong id="live-calibration-eval">Weight = (0.0000 - 0.0000) * 0.000500 = 0.0000</strong></div>
+          <div>Feature tare: <strong id="live-feature-tare">0.0000</strong></div>
+          <div>k: <strong id="live-k-factor">0.0005</strong></div>
+          <div>Weight (raw): <strong id="live-weight-raw">0.0000</strong></div>
 
           <div><strong>Phase 5: Statistical post-processing</strong></div>
           <div class="form-group" style="margin-top:6px;">
@@ -203,6 +213,10 @@
               <option value="ema">EMA</option>
             </select>
           </div>
+          <button id="btn-phase5-save" class="btn btn-default btn-block">Save Phase 5</button>
+          <div style="margin-top:8px;">Smoothing formula: <strong id="live-smoothing-formula">Off</strong></div>
+          <div>Smoothing evaluation: <strong id="live-smoothing-eval">Off</strong></div>
+          <div>Weight (output): <strong id="live-weight-used">0.0000</strong></div>
 
         </section>
 
@@ -210,7 +224,7 @@
         <section class="panel panel-default" style="padding:12px; margin-bottom:12px;">
           <div class="crossed"><span>Formulas & Parameters</span></div>
           <div><strong>Active source formula (Phase 1)</strong></div>
-          <div id="formula-source" style="margin-bottom:10px;">f_eff = clamp(f_cmd, 1, fs/2), A_eff = clamp(A_cmd, 0, 10)</div>
+          <div id="formula-source" style="margin-bottom:10px;">f_eff = clamp(f_cmd, 1, 10e6), A_eff_vpp = clamp(A_cmd_vpp, 0, 2)</div>
 
           <div><strong>Active input formula (Phase 2)</strong></div>
           <div id="formula-input" style="margin-bottom:10px;">x[i] = IN1_V[i]</div>
@@ -252,39 +266,6 @@
           </div>
         </section>
 
-        <!-- Module: Live Calculation Trace -->
-        <section class="panel panel-default" style="padding:12px;">
-          <div class="crossed"><span>Live Processing Trace</span></div>
-          <div>Signal source: <strong id="live-source">Sine -> OUT1</strong></div>
-          <div>Driver action: <strong id="live-driver-action">Off</strong></div>
-          <div>Driver result: <strong id="live-driver-result">Ready.</strong></div>
-          <div>Driver clamp: <strong id="live-source-clamp">f_eff/A_eff from clamp</strong></div>
-          <div>DAC scaling: <strong id="live-dac-formula">sample14 = round(norm * (2^14/2.1) * (A_eff/10))</strong></div>
-
-          <div>ADC conversion: <strong id="live-adc-formula">IN_V = ADC_code / 819.2 (14-bit signed)</strong></div>
-          <div>ADC input: <strong id="live-input">IN1</strong></div>
-          <div>Phase-2 input: <strong id="live-input-formula">x[i] = IN1_V[i]</strong></div>
-          <div>Division guard: <strong id="live-input-guard">Off</strong></div>
-
-          <div>Feature formula: <strong id="live-feature-formula">RMS = sqrt((1/N) * sum(x^2))</strong></div>
-          <div>Lock-in parameters: <strong id="live-lockin-params">Off</strong></div>
-          <div>Feature raw: <strong id="live-feature-raw">0.0000</strong></div>
-          <div>Feature used: <strong id="live-feature-used">0.0000</strong></div>
-
-          <div>Calibration formula: <strong id="live-calibration-formula">Weight = (Feature - Feature_tare) * k</strong></div>
-          <div>Calibration evaluation: <strong id="live-calibration-eval">Weight = (0.0000 - 0.0000) * 0.000500 = 0.0000</strong></div>
-          <div>Feature tare: <strong id="live-feature-tare">0.0000</strong></div>
-          <div>k: <strong id="live-k-factor">0.0005</strong></div>
-          <div>Weight (raw): <strong id="live-weight-raw">0.0000</strong></div>
-
-          <div>Smoothing formula: <strong id="live-smoothing-formula">Off</strong></div>
-          <div>Smoothing evaluation: <strong id="live-smoothing-eval">Off</strong></div>
-          <div>Weight (output): <strong id="live-weight-used">0.0000</strong></div>
-
-          <div>Plot decimation: <strong id="live-plot-decimation">Mode=Signals, Method=Stride, X=index exact</strong></div>
-          <div>RMS IN1 / IN2 (diag.): <strong id="live-rms-in12">0.0000 / 0.0000</strong></div>
-          <div>RMS OUT1 / OUT2 (diag.): <strong id="live-rms-out12">0.0000 / 0.0000</strong></div>
-        </section>
       </div>
     </div>
 

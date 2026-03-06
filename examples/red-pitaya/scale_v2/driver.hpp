@@ -28,8 +28,8 @@ class AdcDacBram {
     , dac_map(ctx.mm.get<mem::dac>())
     {
         current_output_channel = 0;
-        current_amplitude_vpk = 10.0;
-        set_dac_function(1, 10000.0);
+        current_amplitude_vpk = 0.5;
+        set_dac_function(1, 100000.0);
     }
 
     // ----------------------------
@@ -52,8 +52,9 @@ class AdcDacBram {
     // Module: DAC Configuration
     // ----------------------------
     void set_dac_function(uint32_t function, double f) {
-        current_function = std::min(function, uint32_t(3));
-        current_frequency = std::max(1.0, std::min(f, fs / 2.0));
+        // Sine only in scale_v2: function selector is intentionally ignored.
+        (void)function;
+        current_frequency = std::max(1.0, std::min(f, max_output_frequency_hz));
 
         const double T = 1.0 / current_frequency;
         const double Tmax = (dac_size - 1) / fs;
@@ -77,7 +78,7 @@ class AdcDacBram {
     }
 
     void set_dac_amplitude(double amplitude_vpk) {
-        current_amplitude_vpk = std::max(0.0, std::min(amplitude_vpk, 10.0));
+        current_amplitude_vpk = std::max(0.0, std::min(amplitude_vpk, max_output_amplitude_vpk));
         update_dac_waveform();
     }
 
@@ -216,14 +217,15 @@ class AdcDacBram {
     Memory<mem::dac>& dac_map;
     std::vector<float> decimated_data_xy;
     std::vector<float> decimated_dac_data_xy;
-    uint32_t current_function = 1;
-    double current_frequency = 10000.0;
+    double current_frequency = 100000.0;
     uint32_t current_waveform_len = dac_size;
     uint32_t current_output_channel = 0;
-    double current_amplitude_vpk = 10.0;
+    double current_amplitude_vpk = 0.5;
     uint32_t decimation_mode = 1; // 0=Off, 1=Stride, 2=MinMax, 3=Mean
     uint32_t decimation_max_points = 2048;
     const double fs = 125000000;
+    const double max_output_frequency_hz = 10000000.0;
+    const double max_output_amplitude_vpk = 1.0; // 2.0 Vpp
     const uint32_t dac_resolution = 1 << 14;
 
     uint32_t compute_decimation_step(uint32_t raw_length) const {
@@ -338,19 +340,9 @@ class AdcDacBram {
     // ----------------------------
     // Module: DAC Waveform Synthesis Helpers
     // ----------------------------
-    int32_t build_wave_sample(uint32_t function, double phase) const {
+    int32_t build_wave_sample(double phase) const {
         constexpr double pi = 3.14159265358979323846;
-        double normalized = 0.0;
-
-        if (function == 0) {
-            normalized = 2.0 * phase - 1.0;
-        } else if (function == 1) {
-            normalized = std::sin(2.0 * pi * phase);
-        } else if (function == 2) {
-            normalized = 2.0 * phase - 1.0;
-        } else {
-            normalized = 2.0 * std::fabs(2.0 * phase - 1.0) - 1.0;
-        }
+        const double normalized = std::sin(2.0 * pi * phase);
 
         const double full_scale = static_cast<double>(dac_resolution) / 2.1;
         const double amplitude_scale = current_amplitude_vpk / 10.0;
@@ -365,7 +357,7 @@ class AdcDacBram {
 
         for (uint32_t i = 0; i < data.size(); i++) {
             const double phase = std::fmod(current_frequency * i / fs, 1.0);
-            const int32_t sample14s = build_wave_sample(current_function, phase);
+            const int32_t sample14s = build_wave_sample(phase);
             const uint32_t encoded = static_cast<uint32_t>(sample14s) & 0x3FFF;
 
             uint32_t out1 = 0;

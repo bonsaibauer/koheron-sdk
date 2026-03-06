@@ -9,7 +9,6 @@ type DriverAction =
     'rms' |
     'true_rms';
 type DriverRefreshMode = 'off' | '1hz' | '5hz';
-type PlotMode = 'signals' | 'module_pipeline';
 type PlotDecimationMethod = 'none' | 'stride' | 'minmax' | 'mean';
 
 // ----------------------------
@@ -41,10 +40,17 @@ class App {
     // State: Signal Source Controls
     // ----------------------------
     private readonly sampleRateHz = 125000000;
-    private signalModeSelect: HTMLSelectElement;
+    private readonly signalSourceDefaultFrequencyHz = 100000;
+    private readonly signalSourceDefaultAmplitudeVpp = 1.0;
+    private readonly signalSourceMaxFrequencyHz = 10000000;
+    private readonly signalSourceMaxAmplitudeVpp = 2.0;
     private outputChannelSelect: HTMLSelectElement;
     private amplitudeInput: HTMLInputElement;
     private frequencyInput: HTMLInputElement;
+    private phase1SaveBtn: HTMLButtonElement;
+    private appliedOutputChannel = 0;
+    private appliedFrequencyHz = this.signalSourceDefaultFrequencyHz;
+    private appliedAmplitudeVpp = this.signalSourceDefaultAmplitudeVpp;
 
     // ----------------------------
     // State: Driver Panel Controls
@@ -64,6 +70,10 @@ class App {
     private phase3FeatureSelect: HTMLSelectElement;
     private phase4CalibrationSelect: HTMLSelectElement;
     private phase5SmoothingSelect: HTMLSelectElement;
+    private phase2SaveBtn: HTMLButtonElement;
+    private phase3SaveBtn: HTMLButtonElement;
+    private phase4SaveBtn: HTMLButtonElement;
+    private phase5SaveBtn: HTMLButtonElement;
 
     private rmsWindowSamplesInput: HTMLInputElement;
     private smoothingWindowInput: HTMLInputElement;
@@ -75,6 +85,15 @@ class App {
     private smoothingAlphaGroup: HTMLElement;
     private divisionEpsilonGroup: HTMLElement;
     private divisionClipGroup: HTMLElement;
+    private appliedPhase2Input: Phase2Input = 'in1';
+    private appliedPhase3Feature: Phase3Feature = 'rms';
+    private appliedPhase4Calibration: Phase4Calibration = 'tare_scale';
+    private appliedPhase5Smoothing: Phase5Smoothing = 'none';
+    private appliedWindowSamples = 8000;
+    private appliedSmoothingWindow = 5;
+    private appliedSmoothingAlpha = 0.2;
+    private appliedDivisionEpsilon = 0.01;
+    private appliedDivisionClip = 100.0;
 
     // ----------------------------
     // State: Formula Output Fields
@@ -157,18 +176,18 @@ class App {
     // State: Plot Runtime
     // ----------------------------
     private lastPlotRangeUs: jquery.flot.range = {from: 0, to: 0};
+    private runningPlotFrameStartUs = 0;
     private adcRawSize = 16384;
     private dacRawSize = 16384;
     private adcDecimationStep = 1;
     private dacDecimationStep = 1;
-    private plotModeSelect: HTMLSelectElement;
     private plotDecimationMethodSelect: HTMLSelectElement;
 
     private curveVisible: {[key: string]: boolean} = {
         in1: true,
         in2: true,
         out1: true,
-        out2: false,
+        out2: true,
         feature: true,
         weight: true
     };
@@ -193,8 +212,12 @@ class App {
                 this.bindWorkflowControls(document);
                 this.bindScalePanel(document);
 
+                this.applyPhase1Settings();
+                this.applyPhase2Settings();
+                this.applyPhase3Settings();
+                this.applyPhase4Settings();
+                this.applyPhase5Settings();
                 this.updateFormulaAndParameterVisibility();
-                this.applySignalSourceSettings();
 
                 this.updateDiagnosticsPlot();
                 this.updateScaleLoop();
@@ -230,23 +253,16 @@ class App {
     }
 
     private bindPlotActions(document: Document): void {
-        this.plotModeSelect = <HTMLSelectElement>document.getElementById('plot-mode');
         this.plotDecimationMethodSelect = <HTMLSelectElement>document.getElementById('plot-decimation-method');
 
         const onPlotSettingsChanged = () => {
-            this.updateCurveControlUiState(document);
             this.updateFormulaAndParameterVisibility();
         };
 
-        this.plotModeSelect.addEventListener('change', onPlotSettingsChanged);
         this.plotDecimationMethodSelect.addEventListener('change', onPlotSettingsChanged);
 
         const plotPlaceholder = $('#plot-placeholder');
         plotPlaceholder.on('click', '.legendLabel', (event: JQueryEventObject) => {
-            if (this.getPlotMode() !== 'signals') {
-                return;
-            }
-
             const label = ($(event.currentTarget).text() || '').trim();
             const key = this.getSeriesKeyFromLabel(label);
 
@@ -264,39 +280,30 @@ class App {
                 this.plotBasics.resetView(this.lastPlotRangeUs.from, this.lastPlotRangeUs.to);
             });
         }
-
-        this.updateCurveControlUiState(document);
-    }
-
-    private updateCurveControlUiState(document: Document): void {
-        const curveControlsEnabled = this.getPlotMode() === 'signals';
-        const curveIds = ['curve-in1', 'curve-in2', 'curve-out1', 'curve-out2', 'curve-feature', 'curve-weight'];
-
-        for (let i = 0; i < curveIds.length; i++) {
-            const checkbox = <HTMLInputElement>document.getElementById(curveIds[i]);
-            if (!checkbox) {
-                continue;
-            }
-            checkbox.disabled = !curveControlsEnabled;
-            checkbox.title = curveControlsEnabled ? '' : 'Only active in plot mode "Signals".';
-        }
     }
 
     // ----------------------------
     // Module: Source + Driver Panel UI
     // ----------------------------
     private bindSignalSource(document: Document): void {
-        this.signalModeSelect = <HTMLSelectElement>document.getElementById('signal-mode');
         this.outputChannelSelect = <HTMLSelectElement>document.getElementById('output-channel');
         this.amplitudeInput = <HTMLInputElement>document.getElementById('signal-amplitude');
         this.frequencyInput = <HTMLInputElement>document.getElementById('signal-frequency');
+        this.phase1SaveBtn = <HTMLButtonElement>document.getElementById('btn-phase1-save');
 
-        const onChange = () => this.applySignalSourceSettings();
+        const applyPhase1 = () => this.applyPhase1Settings();
 
-        this.signalModeSelect.addEventListener('change', onChange);
-        this.outputChannelSelect.addEventListener('change', onChange);
-        this.amplitudeInput.addEventListener('change', onChange);
-        this.frequencyInput.addEventListener('change', onChange);
+        this.phase1SaveBtn.addEventListener('click', applyPhase1);
+        this.amplitudeInput.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter') {
+                applyPhase1();
+            }
+        });
+        this.frequencyInput.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter') {
+                applyPhase1();
+            }
+        });
     }
 
     private bindDriverPanel(document: Document): void {
@@ -421,6 +428,10 @@ class App {
         this.phase3FeatureSelect = <HTMLSelectElement>document.getElementById('phase3-feature');
         this.phase4CalibrationSelect = <HTMLSelectElement>document.getElementById('phase4-calibration');
         this.phase5SmoothingSelect = <HTMLSelectElement>document.getElementById('phase5-smoothing');
+        this.phase2SaveBtn = <HTMLButtonElement>document.getElementById('btn-phase2-save');
+        this.phase3SaveBtn = <HTMLButtonElement>document.getElementById('btn-phase3-save');
+        this.phase4SaveBtn = <HTMLButtonElement>document.getElementById('btn-phase4-save');
+        this.phase5SaveBtn = <HTMLButtonElement>document.getElementById('btn-phase5-save');
 
         this.rmsWindowSamplesInput = <HTMLInputElement>document.getElementById('rms-window-samples');
         this.smoothingWindowInput = <HTMLInputElement>document.getElementById('smoothing-window');
@@ -440,21 +451,67 @@ class App {
         this.formulaSmoothingEl = <HTMLElement>document.getElementById('formula-smoothing');
         this.formulaPlotEl = <HTMLElement>document.getElementById('formula-plot');
 
-        const onWorkflowChanged = () => {
-            this.resetSmoothingState();
-            this.updateFormulaAndParameterVisibility();
-        };
+        this.phase2SaveBtn.addEventListener('click', () => this.applyPhase2Settings());
+        this.phase3SaveBtn.addEventListener('click', () => this.applyPhase3Settings());
+        this.phase4SaveBtn.addEventListener('click', () => this.applyPhase4Settings());
+        this.phase5SaveBtn.addEventListener('click', () => this.applyPhase5Settings());
+        this.plotMaxPointsInput.addEventListener('change', () => this.updateFormulaAndParameterVisibility());
+    }
 
-        this.phase2InputSelect.addEventListener('change', onWorkflowChanged);
-        this.phase3FeatureSelect.addEventListener('change', onWorkflowChanged);
-        this.phase4CalibrationSelect.addEventListener('change', onWorkflowChanged);
-        this.phase5SmoothingSelect.addEventListener('change', onWorkflowChanged);
-        this.rmsWindowSamplesInput.addEventListener('change', onWorkflowChanged);
-        this.smoothingWindowInput.addEventListener('change', onWorkflowChanged);
-        this.smoothingAlphaInput.addEventListener('change', onWorkflowChanged);
-        this.divisionEpsilonInput.addEventListener('change', onWorkflowChanged);
-        this.divisionClipInput.addEventListener('change', onWorkflowChanged);
-        this.plotMaxPointsInput.addEventListener('change', onWorkflowChanged);
+    private applyPhase2Settings(): void {
+        const mode = this.phase2InputSelect.value;
+        if (mode === 'in1' || mode === 'in2' || mode === 'in1_minus_in2' || mode === 'in1_div_in2') {
+            this.appliedPhase2Input = mode;
+        }
+
+        this.appliedDivisionEpsilon = this.clampDivisionEpsilon(this.parseNumber(this.divisionEpsilonInput.value, this.appliedDivisionEpsilon));
+        this.appliedDivisionClip = this.clampDivisionClip(this.parseNumber(this.divisionClipInput.value, this.appliedDivisionClip));
+
+        this.phase2InputSelect.value = this.appliedPhase2Input;
+        this.divisionEpsilonInput.value = this.appliedDivisionEpsilon.toFixed(6);
+        this.divisionClipInput.value = this.appliedDivisionClip.toFixed(3);
+
+        this.updateFormulaAndParameterVisibility();
+    }
+
+    private applyPhase3Settings(): void {
+        const mode = this.phase3FeatureSelect.value;
+        if (mode === 'rms' || mode === 'true_rms') {
+            this.appliedPhase3Feature = mode;
+        }
+
+        this.appliedWindowSamples = this.clampWindowSamples(this.parseNumber(this.rmsWindowSamplesInput.value, this.appliedWindowSamples));
+        this.phase3FeatureSelect.value = this.appliedPhase3Feature;
+        this.rmsWindowSamplesInput.value = this.appliedWindowSamples.toString();
+
+        this.updateFormulaAndParameterVisibility();
+    }
+
+    private applyPhase4Settings(): void {
+        const mode = this.phase4CalibrationSelect.value;
+        if (mode === 'off' || mode === 'tare_only' || mode === 'scale_only' || mode === 'tare_scale') {
+            this.appliedPhase4Calibration = mode;
+        }
+
+        this.phase4CalibrationSelect.value = this.appliedPhase4Calibration;
+        this.updateFormulaAndParameterVisibility();
+    }
+
+    private applyPhase5Settings(): void {
+        const mode = this.phase5SmoothingSelect.value;
+        if (mode === 'none' || mode === 'moving_average' || mode === 'ema') {
+            this.appliedPhase5Smoothing = mode;
+        }
+
+        this.appliedSmoothingWindow = this.clampSmoothingWindow(this.parseNumber(this.smoothingWindowInput.value, this.appliedSmoothingWindow));
+        this.appliedSmoothingAlpha = this.clampSmoothingAlpha(this.parseNumber(this.smoothingAlphaInput.value, this.appliedSmoothingAlpha));
+
+        this.phase5SmoothingSelect.value = this.appliedPhase5Smoothing;
+        this.smoothingWindowInput.value = this.appliedSmoothingWindow.toString();
+        this.smoothingAlphaInput.value = this.appliedSmoothingAlpha.toFixed(2);
+
+        this.resetSmoothingState();
+        this.updateFormulaAndParameterVisibility();
     }
 
     // ----------------------------
@@ -517,27 +574,36 @@ class App {
     // ----------------------------
     // Module: Formula + Live Trace
     // ----------------------------
-    private applySignalSourceSettings(): void {
-        const signalType = Number(this.signalModeSelect.value);
-        const frequencyCmd = this.parseSignalSourceFrequencyHz(this.frequencyInput.value, 10000);
+    private applyPhase1Settings(): void {
+        const signalType = 1; // Sine only
+        const frequencyCmd = this.parseSignalSourceFrequencyHz(this.frequencyInput.value, this.signalSourceDefaultFrequencyHz);
         const outputChannel = Number(this.outputChannelSelect.value);
-        const amplitudeCmd = this.parseSignalSourceAmplitudeVpk(this.amplitudeInput.value, 1.0);
+        const amplitudeCmdVpp = this.parseSignalSourceAmplitudeVpp(this.amplitudeInput.value, this.signalSourceDefaultAmplitudeVpp);
         const frequencyEff = this.clampFrequencyHz(frequencyCmd);
-        const amplitudeEff = this.clampAmplitudeVpk(amplitudeCmd);
+        const amplitudeEffVpp = this.clampAmplitudeVpp(amplitudeCmdVpp);
+        const amplitudeEffVpk = amplitudeEffVpp / 2.0;
 
-        this.connector.setFunction(signalType, frequencyEff);
-        this.connector.setOutputChannel(outputChannel);
-        this.connector.setAmplitude(amplitudeEff);
+        this.appliedOutputChannel = Math.max(0, Math.min(2, Math.round(outputChannel)));
+        this.appliedFrequencyHz = frequencyEff;
+        this.appliedAmplitudeVpp = amplitudeEffVpp;
 
-        this.liveSourceEl.innerText = this.getSignalMethodLabel(signalType) + ' -> ' + this.getOutputChannelLabel(outputChannel);
+        this.connector.setFunction(signalType, this.appliedFrequencyHz);
+        this.connector.setOutputChannel(this.appliedOutputChannel);
+        this.connector.setAmplitude(amplitudeEffVpk);
+
+        this.frequencyInput.value = this.formatFrequencyInputValue(this.appliedFrequencyHz);
+        this.amplitudeInput.value = this.formatAmplitudeInputValue(this.appliedAmplitudeVpp);
+        this.outputChannelSelect.value = this.appliedOutputChannel.toString();
+
+        this.liveSourceEl.innerText = 'Sine -> ' + this.getOutputChannelLabel(this.appliedOutputChannel);
         this.liveSourceClampEl.innerText =
             'f_cmd=' + frequencyCmd.toFixed(1) +
-            ' -> f_eff=' + frequencyEff.toFixed(1) +
-            ' Hz, A_cmd=' + amplitudeCmd.toFixed(3) +
-            ' -> A_eff=' + amplitudeEff.toFixed(3) + ' Vpk';
+            ' -> f_eff=' + this.appliedFrequencyHz.toFixed(1) +
+            ' Hz, A_cmd=' + amplitudeCmdVpp.toFixed(3) +
+            ' -> A_eff=' + this.appliedAmplitudeVpp.toFixed(3) + ' Vpp';
         this.liveDacFormulaEl.innerText =
-            'sample14 = round(norm * (2^14/2.1) * (A_eff/10)), A_eff=' +
-            amplitudeEff.toFixed(3) + ' Vpk';
+            'sample14 = round(sin(2*pi*phase) * (2^14/2.1) * (A_vpk/10)), A_vpk=' +
+            amplitudeEffVpk.toFixed(3) + ' Vpk';
     }
 
     private updateFormulaAndParameterVisibility(): void {
@@ -550,19 +616,16 @@ class App {
         const divisionEpsilon = this.getDivisionEpsilon();
         const divisionClip = this.getDivisionClip();
         const plotMaxPoints = this.getPlotMaxPoints();
-        const plotMode = this.getPlotMode();
         const plotDecimation = this.getPlotDecimationMethod();
 
-        this.formulaSourceEl.innerText = 'f_eff = clamp(f_cmd, 1, fs/2), A_eff = clamp(A_cmd, 0, 10), fs = 125e6';
+        this.formulaSourceEl.innerText = 'f_eff = clamp(f_cmd, 1, 10e6), A_eff_vpp = clamp(A_cmd_vpp, 0, 2)';
         this.formulaPlotEl.innerText =
-            'Mode=' + this.getPlotModeLabel(plotMode) +
-            ', Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
+            'Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
             ', N_plot_max=' + plotMaxPoints.toString() +
-            ', X=exact sample index (driver)';
+            ', X=running time (us)';
         this.livePlotDecimationEl.innerText =
-            'Mode=' + this.getPlotModeLabel(plotMode) +
-            ', Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
-            ', X=index exact';
+            'Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
+            ', X=running time';
 
         const inputFormula = this.getPhase2InputFormula(inputMode, divisionEpsilon, divisionClip);
         this.formulaInputEl.innerText = inputFormula;
@@ -631,93 +694,85 @@ class App {
     private updateDiagnosticsPlot(): void {
         this.connector.getDecimatedDataChannel(0, (in1Indexed) => {
             this.connector.getDecimatedDataChannel(1, (in2Indexed) => {
-                const in1 = this.sampleIndexPointsToTimeUs(in1Indexed);
-                const in2 = this.sampleIndexPointsToTimeUs(in2Indexed);
-
-                this.latestIn1Plot = in1;
-                this.latestIn2Plot = in2;
-                this.latestIn1 = this.extractY(in1);
-                this.latestIn2 = this.extractY(in2);
-
-                const result = this.runPipeline(this.latestIn1, this.latestIn2, this.out1Cache, this.out2Cache);
-                this.featureTraceValue = result.featureUsed;
-                this.weightTraceValue = result.weightUsed;
-
-                const featureSeries = this.buildConstantSeries(this.latestIn1.length, this.featureTraceValue);
-                const featureRawSeries = this.buildConstantSeries(this.latestIn1.length, result.featureRaw);
-                const weightSeries = this.buildConstantSeries(this.latestIn1.length, this.weightTraceValue);
-                const weightRawSeries = this.buildConstantSeries(this.latestIn1.length, result.weightRaw);
-                const phase2InputSeries = this.buildInputSeriesForMode(this.latestIn1, this.latestIn2, this.getPhase2InputMode());
-                const phase2InputPlot = this.mapSeriesToReferenceX(this.latestIn1Plot, phase2InputSeries);
-                const featurePlot = this.mapSeriesToReferenceX(this.latestIn1Plot, featureSeries);
-                const featureRawPlot = this.mapSeriesToReferenceX(this.latestIn1Plot, featureRawSeries);
-                const weightPlot = this.mapSeriesToReferenceX(this.latestIn1Plot, weightSeries);
-                const weightRawPlot = this.mapSeriesToReferenceX(this.latestIn1Plot, weightRawSeries);
-                const adcStep = Math.max(1, this.adcDecimationStep);
-                const dacStep = Math.max(1, this.dacDecimationStep);
-
-                const range: jquery.flot.range = {
-                    from: 0,
-                    to: this.sampleIndexToMicroseconds(Math.max(1, this.adcRawSize - 1))
-                };
-                this.lastPlotRangeUs = range;
-
-                const plotMaxPoints = this.getPlotMaxPoints();
-                const plotDecimation = this.getPlotDecimationMethod();
-                const plotMode = this.getPlotMode();
-                let nPlotEstimate = this.latestIn1Plot.length;
-                let series: jquery.flot.dataSeries[] = [];
-
-                if (plotMode === 'signals') {
-                    const allSeries: {[key: string]: jquery.flot.dataSeries} = {
-                        in1: { label: 'IN1', data: this.latestIn1Plot, color: '#1f77b4' },
-                        in2: { label: 'IN2', data: this.latestIn2Plot, color: '#ff7f0e' },
-                        out1: { label: 'OUT1', data: this.out1Plot, color: '#2ca02c' },
-                        out2: { label: 'OUT2', data: this.out2Plot, color: '#d62728' },
-                        feature: { label: 'Feature', data: featurePlot, color: '#9467bd' },
-                        weight: { label: 'Weight', data: weightPlot, color: '#8c564b' }
-                    };
-
-                    for (const key in allSeries) {
-                        if (!this.curveVisible[key]) {
-                            continue;
-                        }
-                        series.push(allSeries[key]);
-                    }
-                } else {
-                    const moduleSeries: jquery.flot.dataSeries[] = [
-                        { label: 'x[i] (Phase 2)', data: phase2InputPlot, color: '#1f77b4' },
-                        { label: 'Feature (Phase 3)', data: featureRawPlot, color: '#9467bd' },
-                        { label: 'Weight raw (Phase 4)', data: weightRawPlot, color: '#17becf' },
-                        { label: 'Weight final (Phase 5)', data: weightPlot, color: '#8c564b' }
-                    ];
-                    series = moduleSeries;
-                    nPlotEstimate = phase2InputPlot.length;
-                }
-
-                this.livePlotDecimationEl.innerText =
-                    'Mode=' + this.getPlotModeLabel(plotMode) +
-                    ', Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
-                    ', N_raw=' + this.adcRawSize.toString() +
-                    ', step_drv=' + adcStep.toString() +
-                    ', step_dac=' + dacStep.toString() +
-                    ', N_plot_max=' + plotMaxPoints.toString() +
-                    ', N_plot=' + nPlotEstimate.toString() +
-                    ', X=index exact';
-
-                this.plotBasics.redrawSeries(series, range, () => {
-                    requestAnimationFrame(() => this.updateDiagnosticsPlot());
-                });
-
-                this.liveRmsIn12El.innerText = result.rmsIn1.toFixed(4) + ' / ' + result.rmsIn2.toFixed(4);
-                this.liveRmsOut12El.innerText = result.rmsOut1.toFixed(4) + ' / ' + result.rmsOut2.toFixed(4);
-
                 this.connector.getDecimatedDacDataChannel(0, (out1Indexed) => {
                     this.connector.getDecimatedDacDataChannel(1, (out2Indexed) => {
-                        this.out1Plot = this.sampleIndexPointsToTimeUs(out1Indexed);
-                        this.out2Plot = this.sampleIndexPointsToTimeUs(out2Indexed);
+                        const frameStartUs = this.runningPlotFrameStartUs;
+                        const frameSpanUs = this.sampleIndexToMicroseconds(Math.max(1, this.adcRawSize - 1));
+                        const frameEndUs = frameStartUs + frameSpanUs;
+
+                        const in1 = this.sampleIndexPointsToTimeUs(in1Indexed, frameStartUs);
+                        const in2 = this.sampleIndexPointsToTimeUs(in2Indexed, frameStartUs);
+                        this.latestIn1Plot = in1;
+                        this.latestIn2Plot = in2;
+                        this.latestIn1 = this.extractY(in1);
+                        this.latestIn2 = this.extractY(in2);
+
+                        this.out1Plot = this.sampleIndexPointsToTimeUs(out1Indexed, frameStartUs);
+                        this.out2Plot = this.sampleIndexPointsToTimeUs(out2Indexed, frameStartUs);
                         this.out1Cache = this.extractY(this.out1Plot);
                         this.out2Cache = this.extractY(this.out2Plot);
+
+                        const result = this.runPipeline(this.latestIn1, this.latestIn2, this.out1Cache, this.out2Cache);
+                        this.featureTraceValue = result.featureUsed;
+                        this.weightTraceValue = result.weightUsed;
+
+                        const featureSeries = this.buildConstantSeries(this.latestIn1.length, this.featureTraceValue);
+                        const featureSeriesNeg = this.buildConstantSeries(this.latestIn1.length, -this.featureTraceValue);
+                        const weightSeries = this.buildConstantSeries(this.latestIn1.length, this.weightTraceValue);
+                        const featurePlot = this.mapSeriesToReferenceX(this.latestIn1Plot, featureSeries);
+                        const featurePlotNeg = this.mapSeriesToReferenceX(this.latestIn1Plot, featureSeriesNeg);
+                        const weightPlot = this.mapSeriesToReferenceX(this.latestIn1Plot, weightSeries);
+                        const adcStep = Math.max(1, this.adcDecimationStep);
+                        const dacStep = Math.max(1, this.dacDecimationStep);
+
+                        const range: jquery.flot.range = {
+                            from: frameStartUs,
+                            to: frameEndUs
+                        };
+                        this.lastPlotRangeUs = range;
+
+                        const plotMaxPoints = this.getPlotMaxPoints();
+                        const plotDecimation = this.getPlotDecimationMethod();
+                        let nPlotEstimate = this.latestIn1Plot.length;
+                        let series: jquery.flot.dataSeries[] = [];
+                        const featureLabel = this.getFeatureSeriesLabel();
+                        const allSeries: {[key: string]: jquery.flot.dataSeries} = {
+                            in1: { label: 'IN1', data: this.latestIn1Plot, color: '#1f77b4' },
+                            in2: { label: 'IN2', data: this.latestIn2Plot, color: '#ff7f0e' },
+                            out1: { label: 'OUT1', data: this.out1Plot, color: '#2ca02c' },
+                            out2: { label: 'OUT2', data: this.out2Plot, color: '#d62728' },
+                            weight: { label: 'Weight', data: weightPlot, color: '#8c564b' }
+                        };
+
+                        for (const key in allSeries) {
+                            if (!this.curveVisible[key]) {
+                                continue;
+                            }
+                            series.push(allSeries[key]);
+                        }
+
+                        if (this.curveVisible.feature) {
+                            series.push({ label: featureLabel + ' (+)', data: featurePlot, color: '#9467bd' });
+                            series.push({ label: featureLabel + ' (-)', data: featurePlotNeg, color: '#9467bd' });
+                        }
+
+                        this.livePlotDecimationEl.innerText =
+                            'Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
+                            ', N_raw=' + this.adcRawSize.toString() +
+                            ', step_drv=' + adcStep.toString() +
+                            ', step_dac=' + dacStep.toString() +
+                            ', N_plot_max=' + plotMaxPoints.toString() +
+                            ', N_plot=' + nPlotEstimate.toString() +
+                            ', X=running time';
+
+                        this.plotBasics.setRangeX(range.from, range.to);
+                        this.plotBasics.redrawSeries(series, range, () => {
+                            requestAnimationFrame(() => this.updateDiagnosticsPlot());
+                        });
+
+                        this.liveRmsIn12El.innerText = result.rmsIn1.toFixed(4) + ' / ' + result.rmsIn2.toFixed(4);
+                        this.liveRmsOut12El.innerText = result.rmsOut1.toFixed(4) + ' / ' + result.rmsOut2.toFixed(4);
+                        this.runningPlotFrameStartUs = frameEndUs;
                     });
                 });
             });
@@ -898,43 +953,19 @@ class App {
     // Module: Workflow Selection + Parameters
     // ----------------------------
     private getPhase2InputMode(): Phase2Input {
-        const mode = this.phase2InputSelect.value;
-        if (mode === 'in1' || mode === 'in2' || mode === 'in1_minus_in2' || mode === 'in1_div_in2') {
-            return mode;
-        }
-        return 'in1';
+        return this.appliedPhase2Input;
     }
 
     private getPhase3FeatureMethod(): Phase3Feature {
-        const mode = this.phase3FeatureSelect.value;
-        if (mode === 'rms' || mode === 'true_rms') {
-            return mode;
-        }
-        return 'rms';
+        return this.appliedPhase3Feature;
     }
 
     private getPhase4CalibrationMode(): Phase4Calibration {
-        const mode = this.phase4CalibrationSelect.value;
-        if (mode === 'off' || mode === 'tare_only' || mode === 'scale_only' || mode === 'tare_scale') {
-            return mode;
-        }
-        return 'tare_scale';
+        return this.appliedPhase4Calibration;
     }
 
     private getPhase5SmoothingMethod(): Phase5Smoothing {
-        const mode = this.phase5SmoothingSelect.value;
-        if (mode === 'none' || mode === 'moving_average' || mode === 'ema') {
-            return mode;
-        }
-        return 'none';
-    }
-
-    private getPlotMode(): PlotMode {
-        const mode = this.plotModeSelect.value;
-        if (mode === 'signals' || mode === 'module_pipeline') {
-            return mode;
-        }
-        return 'signals';
+        return this.appliedPhase5Smoothing;
     }
 
     private getPlotDecimationMethod(): PlotDecimationMethod {
@@ -1027,18 +1058,15 @@ class App {
     // Module: Numeric Parameter Readers
     // ----------------------------
     private getWindowSamples(): number {
-        const parsed = this.parseNumber(this.rmsWindowSamplesInput.value, 8000);
-        return Math.max(8000, Math.min(16384, Math.round(parsed)));
+        return this.appliedWindowSamples;
     }
 
     private getSmoothingWindow(): number {
-        const parsed = this.parseNumber(this.smoothingWindowInput.value, 5);
-        return Math.max(1, Math.min(100, Math.round(parsed)));
+        return this.appliedSmoothingWindow;
     }
 
     private getSmoothingAlpha(): number {
-        const parsed = this.parseNumber(this.smoothingAlphaInput.value, 0.2);
-        return Math.max(0.01, Math.min(1.0, parsed));
+        return this.appliedSmoothingAlpha;
     }
 
     private getPlotMaxPoints(): number {
@@ -1047,13 +1075,11 @@ class App {
     }
 
     private getDivisionEpsilon(): number {
-        const parsed = this.parseNumber(this.divisionEpsilonInput.value, 0.01);
-        return Math.max(0.000001, Math.min(5.0, parsed));
+        return this.appliedDivisionEpsilon;
     }
 
     private getDivisionClip(): number {
-        const parsed = this.parseNumber(this.divisionClipInput.value, 100.0);
-        return Math.max(0.1, Math.min(1000000.0, parsed));
+        return this.appliedDivisionClip;
     }
 
     // ----------------------------
@@ -1079,11 +1105,31 @@ class App {
     }
 
     private clampFrequencyHz(frequencyHz: number): number {
-        return Math.max(1.0, Math.min(this.sampleRateHz / 2.0, frequencyHz));
+        return Math.max(1.0, Math.min(this.signalSourceMaxFrequencyHz, frequencyHz));
     }
 
-    private clampAmplitudeVpk(amplitudeVpk: number): number {
-        return Math.max(0.0, Math.min(10.0, amplitudeVpk));
+    private clampAmplitudeVpp(amplitudeVpp: number): number {
+        return Math.max(0.0, Math.min(this.signalSourceMaxAmplitudeVpp, amplitudeVpp));
+    }
+
+    private clampWindowSamples(samples: number): number {
+        return Math.max(8000, Math.min(16384, Math.round(samples)));
+    }
+
+    private clampSmoothingWindow(samples: number): number {
+        return Math.max(1, Math.min(100, Math.round(samples)));
+    }
+
+    private clampSmoothingAlpha(alpha: number): number {
+        return Math.max(0.01, Math.min(1.0, alpha));
+    }
+
+    private clampDivisionEpsilon(epsilon: number): number {
+        return Math.max(0.000001, Math.min(5.0, epsilon));
+    }
+
+    private clampDivisionClip(clip: number): number {
+        return Math.max(0.1, Math.min(1000000.0, clip));
     }
 
     // ----------------------------
@@ -1141,10 +1187,10 @@ class App {
         return result;
     }
 
-    private sampleIndexPointsToTimeUs(points: number[][]): number[][] {
+    private sampleIndexPointsToTimeUs(points: number[][], offsetUs: number = 0): number[][] {
         const out: number[][] = new Array(points.length);
         for (let i = 0; i < points.length; i++) {
-            out[i] = [this.sampleIndexToMicroseconds(points[i][0]), points[i][1]];
+            out[i] = [offsetUs + this.sampleIndexToMicroseconds(points[i][0]), points[i][1]];
         }
         return out;
     }
@@ -1216,11 +1262,14 @@ class App {
         return parsed;
     }
 
-    private parseSignalSourceAmplitudeVpk(raw: string, fallback: number): number {
+    private parseSignalSourceAmplitudeVpp(raw: string, fallback: number): number {
         const parsed = this.parseNumber(raw, fallback);
         const normalized = raw.toLowerCase();
         if (normalized.indexOf('vpp') >= 0) {
-            return parsed / 2.0;
+            return parsed;
+        }
+        if (normalized.indexOf('vpk') >= 0) {
+            return parsed * 2.0;
         }
         return parsed;
     }
@@ -1237,12 +1286,32 @@ class App {
         return parsed;
     }
 
+    private formatFrequencyInputValue(frequencyHz: number): string {
+        return (frequencyHz / 1000.0).toFixed(3) + ' kHz';
+    }
+
+    private formatAmplitudeInputValue(amplitudeVpp: number): string {
+        return amplitudeVpp.toFixed(3) + ' Vpp';
+    }
+
+    private getFeatureSeriesLabel(): string {
+        return this.getPhase3FeatureMethod() === 'true_rms' ? 'True RMS' : 'RMS';
+    }
+
     private getSeriesKeyFromLabel(label: string): string | null {
         if (label === 'IN1') return 'in1';
         if (label === 'IN2') return 'in2';
         if (label === 'OUT1') return 'out1';
         if (label === 'OUT2') return 'out2';
-        if (label === 'Feature') return 'feature';
+        if (
+            label === 'RMS' ||
+            label === 'True RMS' ||
+            label.indexOf('RMS (+)') === 0 ||
+            label.indexOf('RMS (-)') === 0 ||
+            label.indexOf('True RMS (+)') === 0 ||
+            label.indexOf('True RMS (-)') === 0 ||
+            label === 'Feature'
+        ) return 'feature';
         if (label === 'Weight') return 'weight';
         return null;
     }
@@ -1268,25 +1337,10 @@ class App {
         }
     }
 
-    private getSignalMethodLabel(signalType: number): string {
-        if (signalType === 0) return 'BRAM Ramp';
-        if (signalType === 1) return 'Sine';
-        if (signalType === 2) return 'Sawtooth';
-        if (signalType === 3) return 'Triangle';
-        return 'Unknown';
-    }
-
     private getOutputChannelLabel(outputChannel: number): string {
         if (outputChannel === 0) return 'OUT1';
         if (outputChannel === 1) return 'OUT2';
         return 'OUT1 + OUT2';
-    }
-
-    private getPlotModeLabel(mode: PlotMode): string {
-        if (mode === 'module_pipeline') {
-            return 'Module pipeline';
-        }
-        return 'Signals';
     }
 
     private getPlotDecimationMethodLabel(method: PlotDecimationMethod): string {

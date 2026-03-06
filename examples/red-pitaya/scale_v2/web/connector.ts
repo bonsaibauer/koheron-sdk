@@ -16,9 +16,9 @@ class Connector {
         this.driver = this.client.getDriver('AdcDacBram');
         this.cmds = this.driver.getCmds();
 
-        this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], 1, 10000.0));
+        this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], 1, 100000.0));
         this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], 0));
-        this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], 1.0));
+        this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], 0.5));
     }
 
     // ----------------------------
