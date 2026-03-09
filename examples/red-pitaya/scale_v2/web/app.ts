@@ -94,11 +94,13 @@ class App {
     private phase5SaveBtn: HTMLButtonElement;
 
     private rmsWindowSamplesInput: HTMLInputElement;
+    private iqRefGateInput: HTMLInputElement;
     private smoothingWindowInput: HTMLInputElement;
     private smoothingAlphaInput: HTMLInputElement;
     private divisionEpsilonInput: HTMLInputElement;
     private divisionClipInput: HTMLInputElement;
     private plotMaxPointsInput: HTMLInputElement;
+    private iqRefGateGroup: HTMLElement;
     private smoothingWindowGroup: HTMLElement;
     private smoothingAlphaGroup: HTMLElement;
     private divisionEpsilonGroup: HTMLElement;
@@ -109,20 +111,12 @@ class App {
     private appliedPhase4Calibration: Phase4Calibration = 'tare_scale';
     private appliedPhase5Smoothing: Phase5Smoothing = 'none';
     private appliedWindowSamples = 8000;
+    private readonly iqReferenceMinAmplitudeDefault = 0.05;
+    private appliedIqReferenceMinAmplitude = this.iqReferenceMinAmplitudeDefault;
     private appliedSmoothingWindow = 5;
     private appliedSmoothingAlpha = 0.2;
     private appliedDivisionEpsilon = 0.01;
     private appliedDivisionClip = 100.0;
-
-    // ----------------------------
-    // State: Formula Output Fields
-    // ----------------------------
-    private formulaSourceEl: HTMLElement | null = null;
-    private formulaInputEl: HTMLElement | null = null;
-    private formulaFeatureEl: HTMLElement | null = null;
-    private formulaCalibrationEl: HTMLElement | null = null;
-    private formulaSmoothingEl: HTMLElement | null = null;
-    private formulaPlotEl: HTMLElement | null = null;
 
     // ----------------------------
     // State: Live Trace Fields
@@ -204,6 +198,8 @@ class App {
     private iqProjectionBaseI = 0;
     private iqProjectionBaseQ = 0;
     private iqProjectionBaseInitialized = false;
+    private iqSProjHold = 0;
+    private iqSProjHoldInitialized = false;
     private lastIqI = 0;
     private lastIqQ = 0;
 
@@ -213,7 +209,6 @@ class App {
     private lastPlotRangeUs: jquery.flot.range = {from: 0, to: 0};
     private runningPlotFrameStartUs = 0;
     private adcRawSize = 16384;
-    private dacRawSize = 16384;
     private adcDecimationStep = 1;
     private dacDecimationStep = 1;
     private plotDecimationMethodSelect: HTMLSelectElement;
@@ -255,7 +250,6 @@ class App {
                 this.updateFormulaAndParameterVisibility();
 
                 this.updateDiagnosticsPlot();
-                this.updateScaleLoop();
             });
         }, false);
 
@@ -469,22 +463,17 @@ class App {
         this.phase5SaveBtn = <HTMLButtonElement>document.getElementById('btn-phase5-save');
 
         this.rmsWindowSamplesInput = <HTMLInputElement>document.getElementById('rms-window-samples');
+        this.iqRefGateInput = <HTMLInputElement>document.getElementById('iq-ref-gate');
         this.smoothingWindowInput = <HTMLInputElement>document.getElementById('smoothing-window');
         this.smoothingAlphaInput = <HTMLInputElement>document.getElementById('smoothing-alpha');
         this.divisionEpsilonInput = <HTMLInputElement>document.getElementById('division-epsilon');
         this.divisionClipInput = <HTMLInputElement>document.getElementById('division-clip');
         this.plotMaxPointsInput = <HTMLInputElement>document.getElementById('plot-max-points');
+        this.iqRefGateGroup = <HTMLElement>document.getElementById('iq-ref-gate-group');
         this.smoothingWindowGroup = <HTMLElement>document.getElementById('smoothing-window-group');
         this.smoothingAlphaGroup = <HTMLElement>document.getElementById('smoothing-alpha-group');
         this.divisionEpsilonGroup = <HTMLElement>document.getElementById('division-epsilon-group');
         this.divisionClipGroup = <HTMLElement>document.getElementById('division-clip-group');
-
-        this.formulaSourceEl = document.getElementById('formula-source');
-        this.formulaInputEl = document.getElementById('formula-input');
-        this.formulaFeatureEl = document.getElementById('formula-feature');
-        this.formulaCalibrationEl = document.getElementById('formula-calibration');
-        this.formulaSmoothingEl = document.getElementById('formula-smoothing');
-        this.formulaPlotEl = document.getElementById('formula-plot');
 
         this.phase2SaveBtn.addEventListener('click', () => this.applyPhase2Settings());
         this.phase3SaveBtn.addEventListener('click', () => this.applyPhase3Settings());
@@ -523,10 +512,15 @@ class App {
         const isIq = this.appliedPhase3Feature === 'iq_in2';
 
         this.appliedWindowSamples = this.clampWindowSamples(this.parseNumber(this.rmsWindowSamplesInput.value, this.appliedWindowSamples));
+        this.appliedIqReferenceMinAmplitude = this.clampIqReferenceMinAmplitude(
+            this.parseNumber(this.iqRefGateInput.value, this.appliedIqReferenceMinAmplitude)
+        );
         this.phase3FeatureSelect.value = this.appliedPhase3Feature;
         this.rmsWindowSamplesInput.value = this.appliedWindowSamples.toString();
+        this.iqRefGateInput.value = this.appliedIqReferenceMinAmplitude.toFixed(3);
         if (!wasIq && isIq) {
             this.iqProjectionBaseInitialized = false;
+            this.iqSProjHoldInitialized = false;
         }
         this.enforcePhase2MappingForFeatureMethod();
 
@@ -646,6 +640,8 @@ class App {
                 this.iqProjectionBaseI = this.lastIqI;
                 this.iqProjectionBaseQ = this.lastIqQ;
                 this.iqProjectionBaseInitialized = true;
+                this.iqSProjHold = 0;
+                this.iqSProjHoldInitialized = true;
                 this.featureTare = 0;
             } else {
                 this.featureTare = this.featureTraceValue;
@@ -695,6 +691,10 @@ class App {
         this.liveDacFormulaEl.innerText =
             'sample14 = round(sin(2*pi*phase) * (2^14/2.1) * (A_vpk/10)), A_vpk=' +
             amplitudeEffVpk.toFixed(3) + ' Vpk';
+
+        // Frequency changes invalidate IQ lock reference and held feature.
+        this.iqProjectionBaseInitialized = false;
+        this.iqSProjHoldInitialized = false;
     }
 
     private updateFormulaAndParameterVisibility(): void {
@@ -712,16 +712,6 @@ class App {
         this.enforcePhase2MappingForFeatureMethod();
         const inputMode = this.getPhase2InputMode();
 
-        const sourceFormula = 'f_eff = clamp(f_cmd, 1, 10e6), A_eff_vpp = clamp(A_cmd_vpp, 0, 2)';
-        if (this.formulaSourceEl) {
-            this.formulaSourceEl.innerText = sourceFormula;
-        }
-        if (this.formulaPlotEl) {
-            this.formulaPlotEl.innerText =
-                'Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
-                ', N_plot_max=' + plotMaxPoints.toString() +
-                ', X=running time (us)';
-        }
         this.livePlotDecimationEl.innerText =
             'Method=' + this.getPlotDecimationMethodLabel(plotDecimation) +
             ', X=running time';
@@ -729,9 +719,6 @@ class App {
         const inputFormula = isIq
             ? 'x[i] = IN1_V[i] - mean(IN1), r[i] = IN2_V[i] - mean(IN2), Z = X / R'
             : this.getPhase2InputFormula(inputMode, divisionEpsilon, divisionClip);
-        if (this.formulaInputEl) {
-            this.formulaInputEl.innerText = inputFormula;
-        }
         this.liveAdcFormulaEl.innerText = 'IN_V = ADC_code / 819.2 (14-bit signed, approx +/-10 V)';
         this.liveInputFormulaEl.innerText = inputFormula;
         if (isIq) {
@@ -757,9 +744,6 @@ class App {
                 'X=(Ix+jQx), R=(Ir+jQr), Z=X/R, ' +
                 'S_proj=-(dot((Re(Z)-I0,Im(Z)-Q0),u0)), u0=(I0,Q0)/|I0,Q0|';
         }
-        if (this.formulaFeatureEl) {
-            this.formulaFeatureEl.innerText = featureFormula;
-        }
         this.liveFeatureFormulaEl.innerText = featureFormula;
 
         let calibrationFormula = 'Weight = Feature';
@@ -776,9 +760,6 @@ class App {
                 ? 'Weight = (Feature - Offset(Zero from IQ I0/Q0, active=0)) * Gain k'
                 : 'Weight = (Feature - Offset(Feature)) * Gain k';
         }
-        if (this.formulaCalibrationEl) {
-            this.formulaCalibrationEl.innerText = calibrationFormula;
-        }
         this.liveCalibrationFormulaEl.innerText = calibrationFormula;
         this.liveOffsetDefinitionEl.innerText = isIq ? 'Offset (IQ I0/Q0)' : 'Offset (Feature)';
         this.liveFeatureTareEl.innerText = this.getActiveCalibrationOffset().toFixed(4);
@@ -790,10 +771,14 @@ class App {
         this.smoothingAlphaGroup.style.display = 'none';
         this.divisionEpsilonGroup.style.display = 'none';
         this.divisionClipGroup.style.display = 'none';
+        this.iqRefGateGroup.style.display = 'none';
 
         if (!isIq && inputMode === 'in1_div_in2') {
             this.divisionEpsilonGroup.style.display = 'block';
             this.divisionClipGroup.style.display = 'block';
+        }
+        if (isIq) {
+            this.iqRefGateGroup.style.display = 'block';
         }
 
         if (featureMethod === 'true_rms') {
@@ -801,43 +786,29 @@ class App {
         } else if (isIq) {
             this.liveLockinParamsEl.innerText =
                 'f_ref=' + this.appliedFrequencyHz.toFixed(1) +
-                ' Hz, complex ratio X/R, signed projection, den_eps=' + this.iqNormalizationEpsilon.toFixed(6);
+                ' Hz, complex ratio X/R, signed projection, den_eps=' + this.iqNormalizationEpsilon.toFixed(6) +
+                ', ref_gate=' + this.appliedIqReferenceMinAmplitude.toFixed(3);
         } else {
             this.liveLockinParamsEl.innerText = 'Off';
         }
 
         if (smoothingMethod === 'none') {
             const smoothingFormula = 'Off';
-            if (this.formulaSmoothingEl) {
-                this.formulaSmoothingEl.innerText = smoothingFormula;
-            }
             this.liveSmoothingFormulaEl.innerText = smoothingFormula;
         } else if (smoothingMethod === 'moving_average') {
             const smoothingFormula = 'y[n] = (1/M) * sum_{k=0..M-1}(x[n-k])';
-            if (this.formulaSmoothingEl) {
-                this.formulaSmoothingEl.innerText = smoothingFormula;
-            }
             this.liveSmoothingFormulaEl.innerText = smoothingFormula;
             this.smoothingWindowGroup.style.display = 'block';
         } else if (smoothingMethod === 'rms_window') {
             const smoothingFormula = 'y[n] = sign(mu) * sqrt((1/M) * sum_{k=0..M-1}(x[n-k]^2)), mu=(1/M)sum(x)';
-            if (this.formulaSmoothingEl) {
-                this.formulaSmoothingEl.innerText = smoothingFormula;
-            }
             this.liveSmoothingFormulaEl.innerText = smoothingFormula;
             this.smoothingWindowGroup.style.display = 'block';
         } else if (smoothingMethod === 'true_rms_window') {
             const smoothingFormula = 'y[n] = sign(mu) * true_rms(x), mu=(1/M)sum(x)';
-            if (this.formulaSmoothingEl) {
-                this.formulaSmoothingEl.innerText = smoothingFormula;
-            }
             this.liveSmoothingFormulaEl.innerText = smoothingFormula;
             this.smoothingWindowGroup.style.display = 'block';
         } else {
             const smoothingFormula = 'y[n] = alpha * x[n] + (1 - alpha) * y[n-1]';
-            if (this.formulaSmoothingEl) {
-                this.formulaSmoothingEl.innerText = smoothingFormula;
-            }
             this.liveSmoothingFormulaEl.innerText = smoothingFormula;
             this.smoothingAlphaGroup.style.display = 'block';
         }
@@ -872,6 +843,34 @@ class App {
                     this.out2Plot = this.sampleIndexPointsToTimeUs(out2Indexed, frameStartUs);
                     this.out1Cache = this.extractY(this.out1Plot);
                     this.out2Cache = this.extractY(this.out2Plot);
+
+                    const result = this.runPipeline(this.latestIn1, this.latestIn2, this.out1Cache, this.out2Cache);
+                    this.featureTraceValue = this.sanitizeFinite(result.featureUsed);
+                    this.weightTraceValue = this.sanitizeFinite(result.weightUsed);
+                    const activeOffset = this.getActiveCalibrationOffset();
+
+                    this.weightEl.innerText = result.weightUsed.toFixed(3);
+                    this.scaleTareFeatureEl.innerText = this.featureTare.toFixed(4);
+
+                    this.liveInputEl.innerText = this.getPhase2InputLabel(this.getPhase2InputMode());
+                    this.liveFeatureRawEl.innerText = result.featureRaw.toFixed(4);
+                    this.liveFeatureUsedEl.innerText = result.featureUsed.toFixed(4);
+                    this.liveFeatureTareEl.innerText = activeOffset.toFixed(4);
+                    this.liveKFactorEl.innerText = this.calibrationFactor.toFixed(6);
+                    this.liveWeightRawEl.innerText = result.weightRaw.toFixed(4);
+                    this.liveWeightUsedEl.innerText = result.weightUsed.toFixed(4);
+                    this.liveIqIEl.innerText = result.iqI.toFixed(4);
+                    this.liveIqQEl.innerText = result.iqQ.toFixed(4);
+                    this.lastIqI = result.iqI;
+                    this.lastIqQ = result.iqQ;
+                    this.liveIqAEl.innerText = result.iqA.toFixed(4);
+                    this.liveIqARefEl.innerText = result.iqARef.toFixed(4);
+                    this.liveIqANormEl.innerText = result.iqANorm.toFixed(4);
+                    this.liveIqRefPhaseEl.innerText = result.iqRefPhaseDeg.toFixed(2) + ' deg';
+                    this.liveIqI0El.innerText = this.iqProjectionBaseI.toFixed(4);
+                    this.liveIqQ0El.innerText = this.iqProjectionBaseQ.toFixed(4);
+                    this.liveCalibrationEvalEl.innerText = this.buildCalibrationEvaluation(result.featureUsed, this.getPhase4CalibrationMode());
+                    this.liveSmoothingEvalEl.innerText = this.lastSmoothingEvaluationText;
 
                     const featureSeries = this.buildConstantSeries(this.latestIn1Plot.length, this.featureTraceValue);
                     const featureSeriesNeg = this.buildConstantSeries(this.latestIn1Plot.length, -this.featureTraceValue);
@@ -927,47 +926,12 @@ class App {
                     });
 
                     this.liveRmsIn12El.innerText =
-                        this.computeRms(this.latestIn1).toFixed(4) + ' / ' + this.computeRms(this.latestIn2).toFixed(4);
+                        result.rmsIn1.toFixed(4) + ' / ' + result.rmsIn2.toFixed(4);
                     this.liveRmsOut12El.innerText =
-                        this.computeRms(this.out1Cache).toFixed(4) + ' / ' + this.computeRms(this.out2Cache).toFixed(4);
+                        result.rmsOut1.toFixed(4) + ' / ' + result.rmsOut2.toFixed(4);
                     this.runningPlotFrameStartUs = frameEndUs;
                 });
             });
-        });
-    }
-
-    private updateScaleLoop(): void {
-        this.connector.getAdcDualData((in1, in2) => {
-            const result = this.runPipeline(in1, in2, this.out1Cache, this.out2Cache);
-            this.featureTraceValue = this.sanitizeFinite(result.featureUsed);
-            this.weightTraceValue = this.sanitizeFinite(result.weightUsed);
-            const activeOffset = this.getActiveCalibrationOffset();
-
-            this.weightEl.innerText = result.weightUsed.toFixed(3);
-            this.scaleTareFeatureEl.innerText = this.featureTare.toFixed(4);
-
-            this.liveInputEl.innerText = this.getPhase2InputLabel(this.getPhase2InputMode());
-            this.liveFeatureRawEl.innerText = result.featureRaw.toFixed(4);
-            this.liveFeatureUsedEl.innerText = result.featureUsed.toFixed(4);
-            this.liveFeatureTareEl.innerText = activeOffset.toFixed(4);
-            this.liveKFactorEl.innerText = this.calibrationFactor.toFixed(6);
-            this.liveWeightRawEl.innerText = result.weightRaw.toFixed(4);
-            this.liveWeightUsedEl.innerText = result.weightUsed.toFixed(4);
-            this.liveIqIEl.innerText = result.iqI.toFixed(4);
-            this.liveIqQEl.innerText = result.iqQ.toFixed(4);
-            this.lastIqI = result.iqI;
-            this.lastIqQ = result.iqQ;
-            this.liveIqAEl.innerText = result.iqA.toFixed(4);
-            this.liveIqARefEl.innerText = result.iqARef.toFixed(4);
-            this.liveIqANormEl.innerText = result.iqSProj.toFixed(4);
-            this.liveIqRefPhaseEl.innerText = result.iqRefPhaseDeg.toFixed(2) + ' deg';
-            this.liveIqI0El.innerText = this.iqProjectionBaseI.toFixed(4);
-            this.liveIqQ0El.innerText = this.iqProjectionBaseQ.toFixed(4);
-            this.liveCalibrationEvalEl.innerText = this.buildCalibrationEvaluation(result.featureUsed, this.getPhase4CalibrationMode());
-            this.liveSmoothingEvalEl.innerText = this.lastSmoothingEvaluationText;
-            setTimeout(() => {
-                this.updateScaleLoop();
-            }, 100);
         });
     }
 
@@ -1022,14 +986,18 @@ class App {
             };
         }
 
-        const count = Math.max(1, Math.min(this.getWindowSamples(), n));
-        const start = n - count;
+        let count = Math.max(1, Math.min(this.getWindowSamples(), n));
         const method = this.getPhase3FeatureMethod();
 
         if (method === 'iq_in2') {
+            // IQ demodulation is much more stable when the window spans an
+            // integer number of reference periods.
+            count = this.getIqCoherentWindowSamples(count, n);
+            const start = n - count;
             return this.computeIqFeatureIn2(in1, in2, start, count);
         }
 
+        const start = n - count;
         const x = this.getInputSeriesForWindow(in1, in2, start, count, this.getPhase2InputMode());
 
         if (method === 'true_rms') {
@@ -1109,18 +1077,41 @@ class App {
         const uQ = baseQ / Math.max(baseMag, this.iqNormalizationEpsilon);
         const deltaI = iqI - baseI;
         const deltaQ = iqQ - baseQ;
-        const iqSProj = -(deltaI * uI + deltaQ * uQ);
+        const iqSProjRaw = -(deltaI * uI + deltaQ * uQ);
+        let iqSProjUsed = iqSProjRaw;
+
+        // Guard against unstable X/R updates when the reference is too weak.
+        if (iqARef < this.appliedIqReferenceMinAmplitude) {
+            iqSProjUsed = this.iqSProjHoldInitialized ? this.iqSProjHold : 0;
+        } else {
+            this.iqSProjHold = iqSProjRaw;
+            this.iqSProjHoldInitialized = true;
+        }
 
         return {
-            feature: iqSProj,
+            feature: iqSProjUsed,
             iqI,
             iqQ,
             iqA,
             iqARef,
             iqANorm,
-            iqSProj,
+            iqSProj: iqSProjUsed,
             iqRefPhaseDeg: refPhase * 180.0 / Math.PI
         };
+    }
+
+    private getIqCoherentWindowSamples(requested: number, available: number): number {
+        const nAvail = Math.max(1, available);
+        const fRef = Math.max(1.0, this.appliedFrequencyHz);
+        const samplesPerPeriod = this.sampleRateHz / fRef;
+        const requestedSamples = Math.max(1, Math.min(requested, nAvail));
+
+        const requestedCycles = Math.max(1, Math.round(requestedSamples / samplesPerPeriod));
+        const maxCycles = Math.max(1, Math.floor(nAvail / samplesPerPeriod));
+        const cycles = Math.max(1, Math.min(requestedCycles, maxCycles));
+        const coherentSamples = Math.max(1, Math.round(cycles * samplesPerPeriod));
+
+        return Math.max(1, Math.min(coherentSamples, nAvail));
     }
 
     private computeMean(values: number[], start: number, count: number): number {
@@ -1161,14 +1152,6 @@ class App {
         }
 
         return x;
-    }
-
-    private buildInputSeriesForMode(in1: number[], in2: number[], mode: Phase2Input): number[] {
-        const n = Math.min(in1.length, in2.length);
-        if (n <= 0) {
-            return [];
-        }
-        return this.getInputSeriesForWindow(in1, in2, 0, n, mode);
     }
 
     // ----------------------------
@@ -1322,9 +1305,6 @@ class App {
         this.connector.getAdcSize((size) => {
             this.adcRawSize = Math.max(1, Math.round(size));
         });
-        this.connector.getDacSize((size) => {
-            this.dacRawSize = Math.max(1, Math.round(size));
-        });
         this.connector.getAdcDecimationStep((step) => {
             this.adcDecimationStep = Math.max(1, Math.round(step));
         });
@@ -1464,6 +1444,10 @@ class App {
 
     private clampWindowSamples(samples: number): number {
         return Math.max(8000, Math.min(16384, Math.round(samples)));
+    }
+
+    private clampIqReferenceMinAmplitude(amplitude: number): number {
+        return Math.max(0.0, Math.min(5.0, amplitude));
     }
 
     private clampSmoothingWindow(samples: number): number {

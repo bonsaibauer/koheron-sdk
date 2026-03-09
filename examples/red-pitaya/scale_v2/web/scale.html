@@ -240,6 +240,10 @@
             <label for="rms-window-samples">Feature window N (samples)</label>
             <input type="number" id="rms-window-samples" class="form-control" value="8000" min="8000" max="16384" step="16">
           </div>
+          <div class="form-group" id="iq-ref-gate-group" style="display:none;">
+            <label for="iq-ref-gate">IQ reference gate ref_gate (A_ref min)</label>
+            <input type="number" id="iq-ref-gate" class="form-control" value="0.05" min="0" max="5" step="0.001">
+          </div>
           <div><strong>Action</strong></div>
           <button id="btn-phase3-save" class="btn btn-primary btn-block" style="margin-top:8px; margin-bottom:10px;">Apply Phase 3</button>
           <div><strong>Formula</strong></div>
@@ -255,7 +259,7 @@
             <div>IQ Q: <strong id="live-iq-q">0.0000</strong></div>
             <div>IQ A: <strong id="live-iq-a">0.0000</strong></div>
             <div>IQ A_ref: <strong id="live-iq-aref">0.0000</strong></div>
-            <div>IQ S_proj: <strong id="live-iq-anorm">0.0000</strong></div>
+            <div>IQ A_norm: <strong id="live-iq-anorm">0.0000</strong></div>
             <div>IQ ref phase: <strong id="live-iq-ref-phase">0.00 deg</strong></div>
           </div>
         </section>

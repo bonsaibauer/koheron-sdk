@@ -173,34 +173,6 @@ class PlotBasics {
         this.reset_range = true;
     }
 
-    setLogX() {
-        this.options.xaxis.ticks = [0.001, 0.01, 0.1 ,1 ,10 ,100, 1000, 10000, 100000, 1000000, 10000000];
-        this.options.xaxis.tickDecimals = 0;
-        this.options.xaxis.transform = (v) => {return v > 0 ? Math.log10(v) : null};
-        this.options.xaxis.inverseTransform = (v) => {return v!= null ? Math.pow(10, v) : 0.0};
-        this.options.xaxis.tickFormatter = (val, axis) => {
-            if (val >= 1E6) {
-                return (val / 1E6).toFixed(axis.tickDecimals) + "M";
-            } else if (val >= 1E3) {
-                return (val / 1E3).toFixed(axis.tickDecimals) + "k";
-            } else {
-                return val.toFixed(axis.tickDecimals);
-            }
-        }
-    }
-
-    setLogY() {
-        this.log_y = true;
-        this.range_y = <jquery.flot.range>{};
-        this.reset_range = true;
-    }
-    
-    setLinY() {
-        this.log_y = false;
-        this.range_y = <jquery.flot.range>{};
-        this.reset_range = true;
-    }
-
     updateDatapointSpan(datapoint: number[], datapointSpan: HTMLSpanElement): void {
         let positionX: number = (this.plot.pointOffset({x: datapoint[0], y: datapoint[1] })).left;
         let positionY: number = (this.plot.pointOffset({x: datapoint[0], y: datapoint[1] })).top;

@@ -16,45 +16,23 @@ class Connector {
         this.driver = this.client.getDriver('AdcDacBram');
         this.cmds = this.driver.getCmds();
 
-        if (this.hasCommand('set_dac_function')) {
-            this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], 1, 100000.0));
-        }
-        if (this.hasCommand('set_output_channel')) {
-            this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], 2));
-        }
-        if (this.hasCommand('set_dac_amplitude')) {
-            this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], 0.5));
-        }
-    }
-
-    // ----------------------------
-    // Module: Generic Connector Interface
-    // ----------------------------
-    setRange(rangeVal: jquery.flot.range): void {
-        // Intentionally unused for this instrument.
+        this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], 1, 100000.0));
+        this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], 2));
+        this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], 0.5));
     }
 
     // ----------------------------
     // Module: DAC Control Commands
     // ----------------------------
     setFunction(data: number, freq: number): void {
-        if (!this.hasCommand('set_dac_function')) {
-            return;
-        }
         this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], data, freq));
     }
 
     setOutputChannel(channel: number): void {
-        if (!this.hasCommand('set_output_channel')) {
-            return;
-        }
         this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], channel));
     }
 
     setAmplitude(amplitudeVpk: number): void {
-        if (!this.hasCommand('set_dac_amplitude')) {
-            return;
-        }
         this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], amplitudeVpk));
     }
 
@@ -91,13 +69,6 @@ class Connector {
         );
     }
 
-    getDacSize(callback: (size: number) => void): void {
-        this.client.readUint32(
-            Command(this.driver.id, this.cmds['get_dac_size']),
-            (x: number) => callback(x)
-        );
-    }
-
     getAdcDecimationStep(callback: (step: number) => void): void {
         this.client.readUint32(
             Command(this.driver.id, this.cmds['get_adc_decimation_step']),
@@ -115,13 +86,6 @@ class Connector {
     // ----------------------------
     // Module: ADC/DAC Waveform Reads for Plotting
     // ----------------------------
-    getDecimatedDataChannel(channel: number, callback: (points: number[][]) => void): void {
-        this.client.readFloat32Vector(
-            Command(this.driver.id, this.cmds['get_decimated_data_xy'], channel),
-            (array: Float32Array) => callback(this.parseInterleavedXY(array))
-        );
-    }
-
     getAdcDualData(callback: (in1: number[], in2: number[]) => void): void {
         this.client.readFloat32Vector(
             Command(this.driver.id, this.cmds['get_adc_dual_data']),
@@ -159,10 +123,6 @@ class Connector {
         }
 
         return [in1, in2];
-    }
-
-    private hasCommand(name: string): boolean {
-        return Object.prototype.hasOwnProperty.call(this.cmds, name) && this.cmds[name] !== undefined;
     }
 
 }

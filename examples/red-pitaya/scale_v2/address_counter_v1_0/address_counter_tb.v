@@ -9,6 +9,7 @@ module address_counter_tb();
   reg clk;
   reg [COUNT_WIDTH-1:0] count_max;
   wire [31:0] address;
+  wire [31:0] address_adc;
   wire [3:0] wen;
 
   address_counter #(.COUNT_WIDTH(COUNT_WIDTH))
@@ -17,6 +18,7 @@ module address_counter_tb();
     .trig(trig),
     .clk(clk),
     .address(address),
+    .address_adc(address_adc),
     .wen(wen),
     .count_max(count_max)
   );

@@ -23,12 +23,10 @@ class AdcDacBram {
     AdcDacBram(Context& ctx_)
     : ctx(ctx_)
     , ctl(ctx.mm.get<mem::control>())
-    , sts(ctx.mm.get<mem::status>())
     , adc_map(ctx.mm.get<mem::adc>())
     , dac_map(ctx.mm.get<mem::dac>())
     {
-        // Keep both outputs active by default so OUT2 is available even if
-        // a frontend build uses an older command table.
+        // Keep both outputs active by default.
         current_output_channel = 2;
         current_amplitude_vpk = 0.5;
         set_dac_function(1, 100000.0);
@@ -81,17 +79,9 @@ class AdcDacBram {
         update_dac_waveform();
     }
 
-    uint32_t get_output_channel() const {
-        return current_output_channel;
-    }
-
     void set_dac_amplitude(double amplitude_vpk) {
         current_amplitude_vpk = std::max(0.0, std::min(amplitude_vpk, max_output_amplitude_vpk));
         update_dac_waveform();
-    }
-
-    double get_dac_amplitude() const {
-        return current_amplitude_vpk;
     }
 
     void set_plot_decimation(uint32_t mode, uint32_t max_points) {
@@ -100,24 +90,12 @@ class AdcDacBram {
         decimation_max_points = std::max(uint32_t(1), std::min(max_points, max_supported));
     }
 
-    uint32_t get_plot_decimation_mode() const {
-        return decimation_mode;
-    }
-
-    uint32_t get_plot_decimation_max_points() const {
-        return decimation_max_points;
-    }
-
     uint32_t get_adc_decimation_step() const {
         return compute_decimation_step(adc_size);
     }
 
     uint32_t get_dac_decimation_step() const {
         return compute_decimation_step(dac_size);
-    }
-
-    void set_dac_data(const std::array<uint32_t, dac_size>& data) {
-        dac_map.write_array(data);
     }
 
     // ----------------------------
@@ -234,7 +212,6 @@ class AdcDacBram {
     // ----------------------------
     Context& ctx;
     Memory<mem::control>& ctl;
-    Memory<mem::status>& sts;
     Memory<mem::adc>& adc_map;
     Memory<mem::dac>& dac_map;
     std::vector<float> decimated_data_xy;

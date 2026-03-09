@@ -1092,9 +1092,10 @@ proc create_root_design { parentCell } {
   [get_bd_pins adc_dac/adc_dat_a_i]
   connect_bd_net -net adc_dat_b_i_1  [get_bd_ports adc_dat_b_i] \
   [get_bd_pins adc_dac/adc_dat_b_i]
-  connect_bd_net -net address_counter_address  [get_bd_pins address_counter/address] \
-  [get_bd_pins blk_mem_gen_adc/addrb] \
+  connect_bd_net -net address_counter_address_dac  [get_bd_pins address_counter/address] \
   [get_bd_pins blk_mem_gen_dac/addrb]
+  connect_bd_net -net address_counter_address_adc  [get_bd_pins address_counter/address_adc] \
+  [get_bd_pins blk_mem_gen_adc/addrb]
   connect_bd_net -net address_counter_wen  [get_bd_pins address_counter/wen] \
   [get_bd_pins blk_mem_gen_adc/web]
   connect_bd_net -net blk_mem_gen_dac_doutb  [get_bd_pins blk_mem_gen_dac/doutb] \
