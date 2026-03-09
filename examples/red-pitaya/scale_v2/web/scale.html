@@ -141,7 +141,7 @@
           <div style="margin-top:10px;"><strong>Formula</strong></div>
           <div class="formula-box">
             <div>Source clamp: <strong>f_eff = clamp(f_cmd, 1, 10e6), A_eff_vpp = clamp(A_cmd_vpp, 0, 2)</strong></div>
-            <div>DAC synthesis: <strong id="live-dac-formula">sample14 = round(sin(2*pi*phase) * (2^14/2.1) * (A_vpk/10))</strong></div>
+            <div>DAC synthesis: <strong id="live-dac-formula">sample14 = round(sin(2*pi*phase) * (2^14/2.1) * (A_vpk/1.0))</strong></div>
           </div>
           <div style="margin-top:10px;"><strong>Results</strong></div>
           <div class="result-box">

@@ -28,7 +28,6 @@ interface PipelineResult {
     iqA: number;
     iqARef: number;
     iqANorm: number;
-    iqSProj: number;
     iqRefPhaseDeg: number;
 }
 
@@ -39,7 +38,6 @@ interface FeatureComputationResult {
     iqA: number;
     iqARef: number;
     iqANorm: number;
-    iqSProj: number;
     iqRefPhaseDeg: number;
 }
 
@@ -689,7 +687,7 @@ class App {
             ' Hz, A_cmd=' + amplitudeCmdVpp.toFixed(3) +
             ' -> A_eff=' + this.appliedAmplitudeVpp.toFixed(3) + ' Vpp';
         this.liveDacFormulaEl.innerText =
-            'sample14 = round(sin(2*pi*phase) * (2^14/2.1) * (A_vpk/10)), A_vpk=' +
+            'sample14 = round(sin(2*pi*phase) * (2^14/2.1) * (A_vpk/1.0)), A_vpk=' +
             amplitudeEffVpk.toFixed(3) + ' Vpk';
 
         // Frequency changes invalidate IQ lock reference and held feature.
@@ -966,7 +964,6 @@ class App {
             iqA: feature.iqA,
             iqARef: feature.iqARef,
             iqANorm: feature.iqANorm,
-            iqSProj: feature.iqSProj,
             iqRefPhaseDeg: feature.iqRefPhaseDeg
         };
     }
@@ -981,7 +978,6 @@ class App {
                 iqA: 0,
                 iqARef: 0,
                 iqANorm: 0,
-                iqSProj: 0,
                 iqRefPhaseDeg: 0
             };
         }
@@ -1009,7 +1005,6 @@ class App {
                 iqA: 0,
                 iqARef: 0,
                 iqANorm: 0,
-                iqSProj: 0,
                 iqRefPhaseDeg: 0
             };
         }
@@ -1021,7 +1016,6 @@ class App {
             iqA: 0,
             iqARef: 0,
             iqANorm: 0,
-            iqSProj: 0,
             iqRefPhaseDeg: 0
         };
     }
@@ -1095,7 +1089,6 @@ class App {
             iqA,
             iqARef,
             iqANorm,
-            iqSProj: iqSProjUsed,
             iqRefPhaseDeg: refPhase * 180.0 / Math.PI
         };
     }

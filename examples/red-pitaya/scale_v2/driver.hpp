@@ -40,10 +40,6 @@ class AdcDacBram {
         ctl.write<reg::trig>(ctl.read<reg::trig>() ^ 0x1);
     }
 
-    uint32_t get_dac_size() {
-        return dac_size;
-    }
-
     uint32_t get_adc_size() {
         return adc_size;
     }
@@ -184,17 +180,6 @@ class AdcDacBram {
     // ----------------------------
     // Module: Decimated Data Endpoints (index-exact XY)
     // ----------------------------
-    std::vector<float>& get_decimated_data_xy(uint32_t channel) {
-        const auto arr = get_adc();
-        const uint32_t safe_channel = std::min(channel, uint32_t(1));
-
-        const auto sample_at = [&](uint32_t index) -> float {
-            return adc_sample_to_volts(arr[index], safe_channel);
-        };
-
-        return build_decimated_xy(arr.size(), sample_at, decimated_data_xy);
-    }
-
     std::vector<float>& get_decimated_dac_data_xy(uint32_t channel) {
         const auto arr = dac_map.read_array<uint32_t, dac_size>();
         const uint32_t safe_channel = std::min(channel, uint32_t(1));
@@ -214,7 +199,6 @@ class AdcDacBram {
     Memory<mem::control>& ctl;
     Memory<mem::adc>& adc_map;
     Memory<mem::dac>& dac_map;
-    std::vector<float> decimated_data_xy;
     std::vector<float> decimated_dac_data_xy;
     std::vector<float> adc_dual_data;
     double current_frequency = 100000.0;
@@ -260,7 +244,11 @@ class AdcDacBram {
         const uint32_t raw14 = (channel == 0)
             ? (packed_sample & 0x3FFF)
             : ((packed_sample >> 16) & 0x3FFF);
-        return static_cast<float>(decode_signed14(raw14)) / 819.2f;
+        // Keep DAC diagnostics consistent with synthesis scaling.
+        const double dac_full_scale_counts = static_cast<double>(dac_resolution) / 2.1;
+        const double volts = static_cast<double>(decode_signed14(raw14)) *
+            (max_output_amplitude_vpk / dac_full_scale_counts);
+        return static_cast<float>(volts);
     }
 
     template<typename SampleAt>
@@ -346,7 +334,7 @@ class AdcDacBram {
         const double normalized = std::sin(2.0 * pi * phase);
 
         const double full_scale = static_cast<double>(dac_resolution) / 2.1;
-        const double amplitude_scale = current_amplitude_vpk / 10.0;
+        const double amplitude_scale = current_amplitude_vpk / max_output_amplitude_vpk;
         return static_cast<int32_t>(std::llround(normalized * full_scale * amplitude_scale));
     }
 
