@@ -120,6 +120,20 @@ class AdcDacBram {
         return adc_map.read_array<uint32_t, adc_size>();
     }
 
+    // Returns interleaved [IN1_V0, IN2_V0, IN1_V1, IN2_V1, ...] from one acquisition.
+    std::vector<float>& get_adc_dual_data() {
+        const auto arr = get_adc();
+        adc_dual_data.clear();
+        adc_dual_data.reserve(2 * adc_size);
+
+        for (uint32_t i = 0; i < adc_size; i++) {
+            adc_dual_data.push_back(adc_sample_to_volts(arr[i], 0));
+            adc_dual_data.push_back(adc_sample_to_volts(arr[i], 1));
+        }
+
+        return adc_dual_data;
+    }
+
     // Dedicated RMS endpoint in the driver (independent from the UI processing pipeline).
     // Returns RMS for IN1 and IN2 in raw ADC counts (14-bit signed domain).
     std::tuple<float, float> get_adc_rms_data(uint32_t n_samples) {
@@ -217,6 +231,7 @@ class AdcDacBram {
     Memory<mem::dac>& dac_map;
     std::vector<float> decimated_data_xy;
     std::vector<float> decimated_dac_data_xy;
+    std::vector<float> adc_dual_data;
     double current_frequency = 100000.0;
     uint32_t current_waveform_len = dac_size;
     uint32_t current_output_channel = 0;

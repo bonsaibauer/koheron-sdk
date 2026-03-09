@@ -17,7 +17,7 @@ class Connector {
         this.cmds = this.driver.getCmds();
 
         this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], 1, 100000.0));
-        this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], 0));
+        this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], 2));
         this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], 0.5));
     }
 
@@ -107,6 +107,16 @@ class Connector {
         );
     }
 
+    getAdcDualData(callback: (in1: number[], in2: number[]) => void): void {
+        this.client.readFloat32Vector(
+            Command(this.driver.id, this.cmds['get_adc_dual_data']),
+            (array: Float32Array) => {
+                const pair = this.parseInterleavedPairSeries(array);
+                callback(pair[0], pair[1]);
+            }
+        );
+    }
+
     getDecimatedDacDataChannel(channel: number, callback: (points: number[][]) => void): void {
         this.client.readFloat32Vector(
             Command(this.driver.id, this.cmds['get_decimated_dac_data_xy'], channel),
@@ -121,6 +131,19 @@ class Connector {
             points[i] = [array[2 * i], array[2 * i + 1]];
         }
         return points;
+    }
+
+    private parseInterleavedPairSeries(array: Float32Array): [number[], number[]] {
+        const n = Math.floor(array.length / 2);
+        const in1: number[] = new Array(n);
+        const in2: number[] = new Array(n);
+
+        for (let i = 0; i < n; i++) {
+            in1[i] = array[2 * i];
+            in2[i] = array[2 * i + 1];
+        }
+
+        return [in1, in2];
     }
 
 }
