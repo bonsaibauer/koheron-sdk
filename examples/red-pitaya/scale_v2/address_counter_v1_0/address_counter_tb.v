@@ -7,6 +7,7 @@ module address_counter_tb();
   reg clken;
   reg trig;
   reg clk;
+  reg [COUNT_WIDTH-1:0] count_max;
   wire [31:0] address;
   wire [3:0] wen;
 
@@ -16,7 +17,8 @@ module address_counter_tb();
     .trig(trig),
     .clk(clk),
     .address(address),
-    .wen(wen)
+    .wen(wen),
+    .count_max(count_max)
   );
 
   parameter CLK_PERIOD = 8;
@@ -25,6 +27,7 @@ module address_counter_tb();
     clk = 1;
     clken = 1;
     trig = 0;
+    count_max = (1 << COUNT_WIDTH) - 1;
     #(10*CLK_PERIOD) trig = 1;
     #(1*CLK_PERIOD) trig = 0;
     #(100*CLK_PERIOD)
