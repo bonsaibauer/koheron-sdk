@@ -16,9 +16,15 @@ class Connector {
         this.driver = this.client.getDriver('AdcDacBram');
         this.cmds = this.driver.getCmds();
 
-        this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], 1, 100000.0));
-        this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], 2));
-        this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], 0.5));
+        if (this.hasCommand('set_dac_function')) {
+            this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], 1, 100000.0));
+        }
+        if (this.hasCommand('set_output_channel')) {
+            this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], 2));
+        }
+        if (this.hasCommand('set_dac_amplitude')) {
+            this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], 0.5));
+        }
     }
 
     // ----------------------------
@@ -32,14 +38,23 @@ class Connector {
     // Module: DAC Control Commands
     // ----------------------------
     setFunction(data: number, freq: number): void {
+        if (!this.hasCommand('set_dac_function')) {
+            return;
+        }
         this.client.send(Command(this.driver.id, this.cmds['set_dac_function'], data, freq));
     }
 
     setOutputChannel(channel: number): void {
+        if (!this.hasCommand('set_output_channel')) {
+            return;
+        }
         this.client.send(Command(this.driver.id, this.cmds['set_output_channel'], channel));
     }
 
     setAmplitude(amplitudeVpk: number): void {
+        if (!this.hasCommand('set_dac_amplitude')) {
+            return;
+        }
         this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], amplitudeVpk));
     }
 
@@ -144,6 +159,10 @@ class Connector {
         }
 
         return [in1, in2];
+    }
+
+    private hasCommand(name: string): boolean {
+        return Object.prototype.hasOwnProperty.call(this.cmds, name) && this.cmds[name] !== undefined;
     }
 
 }

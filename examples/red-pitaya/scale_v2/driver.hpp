@@ -27,7 +27,9 @@ class AdcDacBram {
     , adc_map(ctx.mm.get<mem::adc>())
     , dac_map(ctx.mm.get<mem::dac>())
     {
-        current_output_channel = 0;
+        // Keep both outputs active by default so OUT2 is available even if
+        // a frontend build uses an older command table.
+        current_output_channel = 2;
         current_amplitude_vpk = 0.5;
         set_dac_function(1, 100000.0);
     }
@@ -54,14 +56,20 @@ class AdcDacBram {
     void set_dac_function(uint32_t function, double f) {
         // Sine only in scale_v2: function selector is intentionally ignored.
         (void)function;
-        current_frequency = std::max(1.0, std::min(f, max_output_frequency_hz));
+        const double f_cmd = std::max(1.0, std::min(f, max_output_frequency_hz));
 
-        const double T = 1.0 / current_frequency;
-        const double Tmax = (dac_size - 1) / fs;
+        // Build a strictly periodic LUT over the actually replayed BRAM span.
+        // This removes boundary glitches from non-periodic table wrap.
+        const double cycles_full = f_cmd * static_cast<double>(dac_size) / fs;
+        uint32_t periods = static_cast<uint32_t>(std::llround(cycles_full));
+        periods = std::max(uint32_t(1), periods);
 
-        uint32_t len = static_cast<uint32_t>(std::floor(Tmax / T) * fs / current_frequency);
+        uint32_t len = static_cast<uint32_t>(std::llround(static_cast<double>(periods) * fs / f_cmd));
         len = std::max(uint32_t(2), std::min(len, dac_size));
+
         current_waveform_len = len;
+        current_waveform_periods = periods;
+        current_frequency = static_cast<double>(periods) * fs / static_cast<double>(len);
 
         ctl.write<reg::trig>(((len - 1) << 1) + (1 & ctl.read<reg::trig>()));
 
@@ -234,6 +242,7 @@ class AdcDacBram {
     std::vector<float> adc_dual_data;
     double current_frequency = 100000.0;
     uint32_t current_waveform_len = dac_size;
+    uint32_t current_waveform_periods = 1;
     uint32_t current_output_channel = 0;
     double current_amplitude_vpk = 0.5;
     uint32_t decimation_mode = 1; // 0=Off, 1=Stride, 2=MinMax, 3=Mean
@@ -371,7 +380,11 @@ class AdcDacBram {
         std::array<uint32_t, dac_size> data;
 
         for (uint32_t i = 0; i < data.size(); i++) {
-            const double phase = std::fmod(current_frequency * i / fs, 1.0);
+            const double phase = std::fmod(
+                static_cast<double>(current_waveform_periods) * static_cast<double>(i) /
+                static_cast<double>(std::max(uint32_t(1), current_waveform_len)),
+                1.0
+            );
             const int32_t sample14s = build_wave_sample(phase);
             const uint32_t encoded = static_cast<uint32_t>(sample14s) & 0x3FFF;
 

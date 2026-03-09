@@ -28,6 +28,7 @@ interface PipelineResult {
     iqA: number;
     iqARef: number;
     iqANorm: number;
+    iqSProj: number;
     iqRefPhaseDeg: number;
 }
 
@@ -38,6 +39,7 @@ interface FeatureComputationResult {
     iqA: number;
     iqARef: number;
     iqANorm: number;
+    iqSProj: number;
     iqRefPhaseDeg: number;
 }
 
@@ -194,6 +196,11 @@ class App {
     private emaInitialized = false;
     private lastSmoothingEvaluationText = 'Off';
     private readonly iqNormalizationEpsilon = 0.000001;
+    private iqProjectionBaseI = 0;
+    private iqProjectionBaseQ = 0;
+    private iqProjectionBaseInitialized = false;
+    private lastIqI = 0;
+    private lastIqQ = 0;
 
     // ----------------------------
     // State: Plot Runtime
@@ -498,6 +505,7 @@ class App {
     }
 
     private applyPhase3Settings(): void {
+        const previousMode = this.appliedPhase3Feature;
         const mode = this.phase3FeatureSelect.value;
         if (mode === 'rms' || mode === 'true_rms' || mode === 'iq_in2') {
             this.appliedPhase3Feature = mode;
@@ -506,6 +514,9 @@ class App {
         this.appliedWindowSamples = this.clampWindowSamples(this.parseNumber(this.rmsWindowSamplesInput.value, this.appliedWindowSamples));
         this.phase3FeatureSelect.value = this.appliedPhase3Feature;
         this.rmsWindowSamplesInput.value = this.appliedWindowSamples.toString();
+        if (previousMode !== 'iq_in2' && this.appliedPhase3Feature === 'iq_in2') {
+            this.iqProjectionBaseInitialized = false;
+        }
 
         this.updateFormulaAndParameterVisibility();
     }
@@ -590,7 +601,15 @@ class App {
             if (!this.usesTare(mode)) {
                 return;
             }
-            this.featureTare = this.featureTraceValue;
+            if (this.getPhase3FeatureMethod() === 'iq_in2') {
+                // In IQ signed projection mode, tare defines the projection origin in I/Q space.
+                this.iqProjectionBaseI = this.lastIqI;
+                this.iqProjectionBaseQ = this.lastIqQ;
+                this.iqProjectionBaseInitialized = true;
+                this.featureTare = 0;
+            } else {
+                this.featureTare = this.featureTraceValue;
+            }
             this.scaleTareFeatureEl.innerText = this.featureTare.toFixed(4);
         });
 
@@ -687,7 +706,7 @@ class App {
         } else if (featureMethod === 'iq_in2') {
             featureFormula =
                 'I=(2/N)sum((IN1-mean(IN1))*refI), Q=(2/N)sum((IN1-mean(IN1))*refQ), ' +
-                'A=sqrt(I^2+Q^2), A_norm=A/max(A_ref,eps)';
+                'S_proj=-(dot((I-I0,Q-Q0),u0))/max(A_ref,eps), u0=(I0,Q0)/|I0,Q0|';
         }
         if (this.formulaFeatureEl) {
             this.formulaFeatureEl.innerText = featureFormula;
@@ -725,7 +744,7 @@ class App {
         } else if (featureMethod === 'iq_in2') {
             this.liveLockinParamsEl.innerText =
                 'f_ref=' + this.appliedFrequencyHz.toFixed(1) +
-                ' Hz, IN2 phase-locked, eps=' + this.iqNormalizationEpsilon.toFixed(6);
+                ' Hz, IN2 phase-locked, signed projection, eps=' + this.iqNormalizationEpsilon.toFixed(6);
         } else {
             this.liveLockinParamsEl.innerText = 'Off';
         }
@@ -863,9 +882,11 @@ class App {
             this.liveWeightUsedEl.innerText = result.weightUsed.toFixed(4);
             this.liveIqIEl.innerText = result.iqI.toFixed(4);
             this.liveIqQEl.innerText = result.iqQ.toFixed(4);
+            this.lastIqI = result.iqI;
+            this.lastIqQ = result.iqQ;
             this.liveIqAEl.innerText = result.iqA.toFixed(4);
             this.liveIqARefEl.innerText = result.iqARef.toFixed(4);
-            this.liveIqANormEl.innerText = result.iqANorm.toFixed(4);
+            this.liveIqANormEl.innerText = result.iqSProj.toFixed(4);
             this.liveIqRefPhaseEl.innerText = result.iqRefPhaseDeg.toFixed(2) + ' deg';
             this.liveCalibrationEvalEl.innerText = this.buildCalibrationEvaluation(result.featureUsed, this.getPhase4CalibrationMode());
             this.liveSmoothingEvalEl.innerText = this.lastSmoothingEvaluationText;
@@ -906,6 +927,7 @@ class App {
             iqA: feature.iqA,
             iqARef: feature.iqARef,
             iqANorm: feature.iqANorm,
+            iqSProj: feature.iqSProj,
             iqRefPhaseDeg: feature.iqRefPhaseDeg
         };
     }
@@ -920,6 +942,7 @@ class App {
                 iqA: 0,
                 iqARef: 0,
                 iqANorm: 0,
+                iqSProj: 0,
                 iqRefPhaseDeg: 0
             };
         }
@@ -943,6 +966,7 @@ class App {
                 iqA: 0,
                 iqARef: 0,
                 iqANorm: 0,
+                iqSProj: 0,
                 iqRefPhaseDeg: 0
             };
         }
@@ -954,6 +978,7 @@ class App {
             iqA: 0,
             iqARef: 0,
             iqANorm: 0,
+            iqSProj: 0,
             iqRefPhaseDeg: 0
         };
     }
@@ -1003,14 +1028,29 @@ class App {
         const iqQRef = scale * accQRef;
         const iqARef = Math.sqrt(iqIRef * iqIRef + iqQRef * iqQRef);
         const iqANorm = iqA / Math.max(iqARef, this.iqNormalizationEpsilon);
+        if (!this.iqProjectionBaseInitialized) {
+            this.iqProjectionBaseI = iqI;
+            this.iqProjectionBaseQ = iqQ;
+            this.iqProjectionBaseInitialized = true;
+        }
+
+        const baseI = this.iqProjectionBaseI;
+        const baseQ = this.iqProjectionBaseQ;
+        const baseMag = Math.sqrt(baseI * baseI + baseQ * baseQ);
+        const uI = baseI / Math.max(baseMag, this.iqNormalizationEpsilon);
+        const uQ = baseQ / Math.max(baseMag, this.iqNormalizationEpsilon);
+        const deltaI = iqI - baseI;
+        const deltaQ = iqQ - baseQ;
+        const iqSProj = -(deltaI * uI + deltaQ * uQ) / Math.max(iqARef, this.iqNormalizationEpsilon);
 
         return {
-            feature: iqANorm,
+            feature: iqSProj,
             iqI,
             iqQ,
             iqA,
             iqARef,
             iqANorm,
+            iqSProj,
             iqRefPhaseDeg: refPhase * 180.0 / Math.PI
         };
     }
@@ -1472,7 +1512,7 @@ class App {
     private getFeatureSeriesLabel(): string {
         const method = this.getPhase3FeatureMethod();
         if (method === 'true_rms') return 'True RMS';
-        if (method === 'iq_in2') return 'IQ |A|/Aref';
+        if (method === 'iq_in2') return 'IQ Sproj';
         return 'RMS';
     }
 
@@ -1484,13 +1524,13 @@ class App {
         if (
             label === 'RMS' ||
             label === 'True RMS' ||
-            label === 'IQ |A|/Aref' ||
+            label === 'IQ Sproj' ||
             label.indexOf('RMS (+)') === 0 ||
             label.indexOf('RMS (-)') === 0 ||
             label.indexOf('True RMS (+)') === 0 ||
             label.indexOf('True RMS (-)') === 0 ||
-            label.indexOf('IQ |A|/Aref (+)') === 0 ||
-            label.indexOf('IQ |A|/Aref (-)') === 0 ||
+            label.indexOf('IQ Sproj (+)') === 0 ||
+            label.indexOf('IQ Sproj (-)') === 0 ||
             label === 'Feature'
         ) return 'feature';
         if (label === 'Weight') return 'weight';
