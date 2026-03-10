@@ -105,14 +105,14 @@ class App {
     private divisionClipGroup: HTMLElement;
     private appliedPhase2Input: Phase2Input = 'in1';
     private lastManualPhase2Input: Phase2Input = 'in1';
-    private appliedPhase3Feature: Phase3Feature = 'rms';
+    private appliedPhase3Feature: Phase3Feature = 'iq_in2';
     private appliedPhase4Calibration: Phase4Calibration = 'tare_scale';
-    private appliedPhase5Smoothing: Phase5Smoothing = 'none';
+    private appliedPhase5Smoothing: Phase5Smoothing = 'ema';
     private appliedWindowSamples = 8000;
     private readonly iqReferenceMinAmplitudeDefault = 0.05;
     private appliedIqReferenceMinAmplitude = this.iqReferenceMinAmplitudeDefault;
     private appliedSmoothingWindow = 5;
-    private appliedSmoothingAlpha = 0.2;
+    private appliedSmoothingAlpha = 0.10;
     private appliedDivisionEpsilon = 0.01;
     private appliedDivisionClip = 100.0;
 
@@ -164,7 +164,7 @@ class App {
     private calibrationInput: HTMLInputElement;
     private calibrationSaveBtn: HTMLButtonElement;
     private tareBtn: HTMLButtonElement;
-    private calibrationFactor = 0.0005;
+    private calibrationFactor = 0.093;
     private featureTare = 0;
 
     // ----------------------------
