@@ -31,6 +31,12 @@
       font-family: "Courier New", Courier, monospace;
       font-size: 12px;
     }
+
+    .calibration-tool-table th,
+    .calibration-tool-table td {
+      vertical-align: middle !important;
+      font-size: 12px;
+    }
   </style>
 
   <script type="text/javascript" src="jquery.min.js"></script>
@@ -110,6 +116,32 @@
             </div>
             <button id="btn-save-scale" class="btn btn-success btn-block">Apply calibration</button>
             <div style="margin-top:8px;">Feature tare: <strong id="scale-tare-feature">0.0000</strong></div>
+          </div>
+          <hr style="margin: 12px 0;">
+          <div><strong>Calibration Tool</strong></div>
+          <button id="btn-calibration-add-measurement" class="btn btn-primary btn-block" style="margin-top:8px;">Messung hinzufuegen (3s Countdown + 5s Messung)</button>
+          <button id="btn-calibration-download-csv" class="btn btn-default btn-block" style="margin-top:8px;">CSV herunterladen</button>
+          <div style="margin-top:8px;">Status: <strong id="calibration-tool-status">Bereit.</strong></div>
+          <div style="margin-top:4px;">Empfohlener k (Mittel): <strong id="calibration-tool-k-avg">-</strong></div>
+          <div style="margin-top:8px; max-height:260px; overflow:auto;">
+            <table class="table table-bordered table-condensed calibration-tool-table" style="margin-bottom:0;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Zeit</th>
+                  <th>Feature (avg)</th>
+                  <th>Feature fuer k (avg)</th>
+                  <th>Realgewicht [kg]</th>
+                  <th>k ermittelt [kg/feature]</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody id="calibration-tool-body">
+                <tr>
+                  <td colspan="7">Noch keine Messung vorhanden.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </section>
       </div>
