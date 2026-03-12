@@ -60,6 +60,8 @@ interface CalibrationMeasurementSample {
     iqARef: number;
     iqANorm: number;
     iqRefPhaseDeg: number;
+    iqI0: number;
+    iqQ0: number;
 }
 
 interface CalibrationMeasurementRecord {
@@ -88,6 +90,8 @@ interface CalibrationMeasurementRecord {
     iqARefAvg: number;
     iqANormAvg: number;
     iqRefPhaseDegAvg: number;
+    iqI0Avg: number;
+    iqQ0Avg: number;
     outputChannel: number;
     frequencyHz: number;
     amplitudeVpp: number;
@@ -773,12 +777,12 @@ class App {
         this.updateCalibrationToolButtonsState();
 
         let countdownRemaining = countdownSeconds;
-        this.setCalibrationToolStatus('Messung startet in ' + countdownRemaining.toString() + ' s');
+        this.setCalibrationToolStatus('Measurement starts in ' + countdownRemaining.toString() + ' s');
 
         const countdownTimer = window.setInterval(() => {
             countdownRemaining -= 1;
             if (countdownRemaining > 0) {
-                this.setCalibrationToolStatus('Messung startet in ' + countdownRemaining.toString() + ' s');
+                this.setCalibrationToolStatus('Measurement starts in ' + countdownRemaining.toString() + ' s');
                 return;
             }
 
@@ -795,7 +799,7 @@ class App {
                 this.calibrationMeasurements.push(record);
                 this.saveCalibrationMeasurements();
                 this.renderCalibrationMeasurements();
-                this.setCalibrationToolStatus('Messung #' + record.id.toString() + ' gespeichert.');
+                this.setCalibrationToolStatus('Measurement #' + record.id.toString() + ' saved.');
                 this.calibrationMeasurementRunning = false;
                 this.updateCalibrationToolButtonsState();
             });
@@ -808,7 +812,7 @@ class App {
         const samples: CalibrationMeasurementSample[] = [];
         let remainingSeconds = durationSeconds;
 
-        this.setCalibrationToolStatus('Messung ... noch ' + remainingSeconds.toString() + ' s');
+        this.setCalibrationToolStatus('Measuring... ' + remainingSeconds.toString() + ' s left');
         samples.push(this.captureCalibrationSample());
 
         const samplingTimer = window.setInterval(() => {
@@ -818,7 +822,7 @@ class App {
         const statusTimer = window.setInterval(() => {
             remainingSeconds -= 1;
             if (remainingSeconds > 0) {
-                this.setCalibrationToolStatus('Messung ... noch ' + remainingSeconds.toString() + ' s');
+                this.setCalibrationToolStatus('Measuring... ' + remainingSeconds.toString() + ' s left');
             }
         }, 1000);
 
@@ -850,7 +854,9 @@ class App {
             iqA: this.sanitizeFinite(p.iqA),
             iqARef: this.sanitizeFinite(p.iqARef),
             iqANorm: this.sanitizeFinite(p.iqANorm),
-            iqRefPhaseDeg: this.sanitizeFinite(p.iqRefPhaseDeg)
+            iqRefPhaseDeg: this.sanitizeFinite(p.iqRefPhaseDeg),
+            iqI0: this.sanitizeFinite(this.iqProjectionBaseI),
+            iqQ0: this.sanitizeFinite(this.iqProjectionBaseQ)
         };
     }
 
@@ -892,6 +898,8 @@ class App {
             iqARefAvg: avg((sample) => sample.iqARef),
             iqANormAvg: avg((sample) => sample.iqANorm),
             iqRefPhaseDegAvg: avg((sample) => sample.iqRefPhaseDeg),
+            iqI0Avg: avg((sample) => sample.iqI0),
+            iqQ0Avg: avg((sample) => sample.iqQ0),
             outputChannel: this.appliedOutputChannel,
             frequencyHz: this.appliedFrequencyHz,
             amplitudeVpp: this.appliedAmplitudeVpp,
@@ -944,7 +952,7 @@ class App {
         }
 
         if (this.calibrationMeasurements.length <= 0) {
-            this.calibrationToolBodyEl.innerHTML = '<tr><td colspan="7">Noch keine Messung vorhanden.</td></tr>';
+            this.calibrationToolBodyEl.innerHTML = '<tr><td colspan="6">No measurements yet.</td></tr>';
             this.calibrationToolAvgKEl.innerText = '-';
             this.updateCalibrationToolButtonsState();
             return;
@@ -964,10 +972,12 @@ class App {
                 '<td>' + row.id.toString() + '</td>' +
                 '<td>' + this.formatMeasurementTime(row.completedAtIso) + '</td>' +
                 '<td>' + this.sanitizeFinite(row.featureUsedAvg).toFixed(6) + '</td>' +
-                '<td>' + this.sanitizeFinite(row.featureForScaleAvg).toFixed(6) + '</td>' +
                 '<td><input type="text" class="form-control input-sm calibration-realweight-input" data-measurement-id="' + row.id.toString() + '" value="' + realWeightText + '" placeholder="kg"></td>' +
                 '<td><strong id="calibration-k-display-' + row.id.toString() + '">' + suggestedText + '</strong></td>' +
-                '<td><button class="btn btn-xs btn-default calibration-apply-k-btn" data-measurement-id="' + row.id.toString() + '" ' + applyDisabled + '>k uebernehmen</button></td>' +
+                '<td>' +
+                '<button class="btn btn-xs btn-default calibration-apply-k-btn" data-measurement-id="' + row.id.toString() + '" ' + applyDisabled + '>Apply k</button> ' +
+                '<button class="btn btn-xs btn-danger calibration-delete-measurement-btn" data-measurement-id="' + row.id.toString() + '">Delete</button>' +
+                '</td>' +
                 '</tr>';
         }
 
@@ -994,6 +1004,17 @@ class App {
             }
             const measurementId = parseInt(idAttr, 10);
             button.addEventListener('click', () => this.applyMeasurementCalibrationFactor(measurementId));
+        }
+
+        const deleteButtons = this.calibrationToolBodyEl.querySelectorAll('.calibration-delete-measurement-btn');
+        for (let i = 0; i < deleteButtons.length; i++) {
+            const button = <HTMLButtonElement>deleteButtons[i];
+            const idAttr = button.getAttribute('data-measurement-id');
+            if (!idAttr) {
+                continue;
+            }
+            const measurementId = parseInt(idAttr, 10);
+            button.addEventListener('click', () => this.deleteCalibrationMeasurement(measurementId));
         }
 
         const validK: number[] = [];
@@ -1036,7 +1057,22 @@ class App {
         this.calibrationFactor = record.suggestedCalibrationFactor;
         this.calibrationInput.value = this.calibrationFactor.toFixed(8);
         this.liveKFactorEl.innerText = this.calibrationFactor.toFixed(6);
-        this.setCalibrationToolStatus('Kalibrierfaktor aus Messung #' + measurementId.toString() + ' uebernommen.');
+        this.setCalibrationToolStatus('Calibration factor from measurement #' + measurementId.toString() + ' applied.');
+    }
+
+    private deleteCalibrationMeasurement(measurementId: number): void {
+        const index = this.calibrationMeasurements.findIndex((item) => item.id === measurementId);
+        if (index < 0) {
+            return;
+        }
+        const confirmed = window.confirm('Delete measurement #' + measurementId.toString() + '?');
+        if (!confirmed) {
+            return;
+        }
+        this.calibrationMeasurements.splice(index, 1);
+        this.saveCalibrationMeasurements();
+        this.renderCalibrationMeasurements();
+        this.setCalibrationToolStatus('Measurement #' + measurementId.toString() + ' deleted.');
     }
 
     private setCalibrationToolStatus(text: string): void {
@@ -1067,7 +1103,7 @@ class App {
             window.localStorage.setItem(this.calibrationToolStorageKey, JSON.stringify(this.calibrationMeasurements));
         } catch (error) {
             void error;
-            this.setCalibrationToolStatus('Speichern fehlgeschlagen (localStorage nicht verfuegbar).');
+            this.setCalibrationToolStatus('Saving failed (localStorage unavailable).');
         }
     }
 
@@ -1104,7 +1140,7 @@ class App {
             void error;
             this.calibrationMeasurements = [];
             this.nextCalibrationMeasurementId = 1;
-            this.setCalibrationToolStatus('Temporere Messdaten konnten nicht geladen werden.');
+            this.setCalibrationToolStatus('Temporary measurement data could not be loaded.');
         }
         this.updateCalibrationToolButtonsState();
     }
@@ -1133,7 +1169,9 @@ class App {
             iqA: this.toFiniteNumber(sampleRaw.iqA),
             iqARef: this.toFiniteNumber(sampleRaw.iqARef),
             iqANorm: this.toFiniteNumber(sampleRaw.iqANorm),
-            iqRefPhaseDeg: this.toFiniteNumber(sampleRaw.iqRefPhaseDeg)
+            iqRefPhaseDeg: this.toFiniteNumber(sampleRaw.iqRefPhaseDeg),
+            iqI0: this.toFiniteNumber(sampleRaw.iqI0),
+            iqQ0: this.toFiniteNumber(sampleRaw.iqQ0)
         }));
 
         const featureForScaleAvgFallback = this.toFiniteNumber(raw.featureUsedAvg) - this.toFiniteNumber(raw.activeOffsetAvg);
@@ -1195,6 +1233,8 @@ class App {
             iqARefAvg: this.toFiniteNumber(raw.iqARefAvg),
             iqANormAvg: this.toFiniteNumber(raw.iqANormAvg),
             iqRefPhaseDegAvg: this.toFiniteNumber(raw.iqRefPhaseDegAvg),
+            iqI0Avg: this.toFiniteNumber(raw.iqI0Avg),
+            iqQ0Avg: this.toFiniteNumber(raw.iqQ0Avg),
             outputChannel: Math.max(0, Math.min(2, Math.round(this.toFiniteNumber(raw.outputChannel, 2)))),
             frequencyHz: this.toFiniteNumber(raw.frequencyHz, this.signalSourceDefaultFrequencyHz),
             amplitudeVpp: this.toFiniteNumber(raw.amplitudeVpp, this.signalSourceDefaultAmplitudeVpp),
@@ -1237,7 +1277,7 @@ class App {
 
     private downloadCalibrationCsv(): void {
         if (this.calibrationMeasurements.length <= 0) {
-            this.setCalibrationToolStatus('Keine Messungen fuer CSV vorhanden.');
+            this.setCalibrationToolStatus('No measurements available for CSV.');
             return;
         }
         const csv = this.buildCalibrationCsv();
@@ -1250,147 +1290,44 @@ class App {
         link.click();
         document.body.removeChild(link);
         window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
-        this.setCalibrationToolStatus('CSV exportiert.');
+        this.setCalibrationToolStatus('CSV exported.');
     }
 
     private buildCalibrationCsv(): string {
         const headers = [
-            'real_weight_kg',
-            'suggested_k_kg_per_feature',
             'measurement_id',
             'completed_at_iso',
-            'sample_index',
-            'sample_timestamp_ms',
-            'feature_for_scale_sample',
-            'feature_used_sample',
-            'feature_raw_sample',
-            'active_offset_sample',
-            'calibration_factor_sample',
-            'weight_raw_sample',
-            'weight_used_sample',
-            'rms_in1_sample',
-            'rms_in2_sample',
-            'rms_out1_sample',
-            'rms_out2_sample',
-            'iq_i_sample',
-            'iq_q_sample',
-            'iq_a_sample',
-            'iq_a_ref_sample',
-            'iq_a_norm_sample',
-            'iq_ref_phase_deg_sample',
-            'feature_for_scale_avg',
+            'real_weight_kg',
             'feature_used_avg',
-            'feature_raw_avg',
-            'active_offset_avg',
-            'weight_raw_avg',
-            'weight_used_avg',
-            'rms_in1_avg',
-            'rms_in2_avg',
-            'rms_out1_avg',
-            'rms_out2_avg',
-            'iq_i_avg',
-            'iq_q_avg',
-            'iq_a_avg',
+            'suggested_k_kg_per_feature',
+            'iq_i0_avg',
+            'iq_q0_avg',
             'iq_a_ref_avg',
-            'iq_a_norm_avg',
-            'iq_ref_phase_deg_avg',
-            'calibration_factor_at_measurement',
-            'output_channel',
             'frequency_hz',
             'amplitude_vpp',
-            'phase2_input',
-            'phase3_feature',
-            'phase4_calibration',
-            'phase5_smoothing',
-            'window_samples',
             'iq_ref_gate',
-            'smoothing_window',
-            'smoothing_alpha',
-            'division_epsilon',
-            'division_clip',
-            'plot_decimation_method',
-            'plot_max_points',
-            'driver_action',
-            'driver_refresh_mode',
-            'countdown_seconds',
-            'measurement_seconds',
-            'sample_count'
+            'phase4_calibration'
         ];
 
         const lines: string[] = [headers.join(',')];
 
         for (let i = 0; i < this.calibrationMeasurements.length; i++) {
             const measurement = this.calibrationMeasurements[i];
-            const samples = measurement.samples.length > 0
-                ? measurement.samples
-                : [this.captureCalibrationSample()];
-
-            for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
-                const sample = samples[sampleIndex];
-                const row = [
-                    measurement.realWeightKg,
-                    measurement.suggestedCalibrationFactor,
-                    measurement.id,
-                    measurement.completedAtIso,
-                    sampleIndex,
-                    sample.timestampMs,
-                    sample.featureForScale,
-                    sample.featureUsed,
-                    sample.featureRaw,
-                    sample.activeOffset,
-                    sample.calibrationFactor,
-                    sample.weightRaw,
-                    sample.weightUsed,
-                    sample.rmsIn1,
-                    sample.rmsIn2,
-                    sample.rmsOut1,
-                    sample.rmsOut2,
-                    sample.iqI,
-                    sample.iqQ,
-                    sample.iqA,
-                    sample.iqARef,
-                    sample.iqANorm,
-                    sample.iqRefPhaseDeg,
-                    measurement.featureForScaleAvg,
-                    measurement.featureUsedAvg,
-                    measurement.featureRawAvg,
-                    measurement.activeOffsetAvg,
-                    measurement.weightRawAvg,
-                    measurement.weightUsedAvg,
-                    measurement.rmsIn1Avg,
-                    measurement.rmsIn2Avg,
-                    measurement.rmsOut1Avg,
-                    measurement.rmsOut2Avg,
-                    measurement.iqIAvg,
-                    measurement.iqQAvg,
-                    measurement.iqAAvg,
-                    measurement.iqARefAvg,
-                    measurement.iqANormAvg,
-                    measurement.iqRefPhaseDegAvg,
-                    measurement.calibrationFactorAtMeasurement,
-                    measurement.outputChannel,
-                    measurement.frequencyHz,
-                    measurement.amplitudeVpp,
-                    measurement.phase2Input,
-                    measurement.phase3Feature,
-                    measurement.phase4Calibration,
-                    measurement.phase5Smoothing,
-                    measurement.windowSamples,
-                    measurement.iqRefGate,
-                    measurement.smoothingWindow,
-                    measurement.smoothingAlpha,
-                    measurement.divisionEpsilon,
-                    measurement.divisionClip,
-                    measurement.plotDecimationMethod,
-                    measurement.plotMaxPoints,
-                    measurement.driverAction,
-                    measurement.driverRefreshMode,
-                    measurement.countdownSeconds,
-                    measurement.measurementSeconds,
-                    measurement.sampleCount
-                ];
-                lines.push(row.map((value) => this.csvEscape(value)).join(','));
-            }
+            const row = [
+                measurement.id,
+                measurement.completedAtIso,
+                measurement.realWeightKg,
+                measurement.featureUsedAvg,
+                measurement.suggestedCalibrationFactor,
+                measurement.iqI0Avg,
+                measurement.iqQ0Avg,
+                measurement.iqARefAvg,
+                measurement.frequencyHz,
+                measurement.amplitudeVpp,
+                measurement.iqRefGate,
+                measurement.phase4Calibration
+            ];
+            lines.push(row.map((value) => this.csvEscape(value)).join(','));
         }
 
         return lines.join('\n');
@@ -1400,11 +1337,22 @@ class App {
         if (value === null || value === undefined) {
             return '';
         }
-        const text = String(value);
+        let text = '';
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            text = this.formatCsvNumber(value);
+        } else {
+            text = String(value);
+        }
         if (text.indexOf('"') >= 0 || text.indexOf(',') >= 0 || text.indexOf('\n') >= 0) {
             return '"' + text.replace(/"/g, '""') + '"';
         }
         return text;
+    }
+
+    private formatCsvNumber(value: number): string {
+        const rounded = Math.round(value * 10000) / 10000;
+        const normalized = Math.abs(rounded) < 1e-12 ? 0 : rounded;
+        return normalized.toString();
     }
 
     private buildCalibrationCsvFilename(): string {
