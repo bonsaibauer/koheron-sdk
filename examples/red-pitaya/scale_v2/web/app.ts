@@ -232,10 +232,12 @@ class App {
     private weightEl: HTMLElement;
     private weightUnitEl: HTMLElement;
 
-    private calibrationInput: HTMLInputElement;
-    private calibrationSaveBtn: HTMLButtonElement;
     private tareBtn: HTMLButtonElement;
-    private calibrationFactor = 0.093;
+    private readonly expCalibrationA = 5.5777;
+    private readonly expCalibrationBgPerGram = 0.001142;
+    private readonly expCalibrationBkg = this.expCalibrationBgPerGram * 1000.0;
+    private readonly expCalibrationC = -5.9575;
+    private readonly expCalibrationArgumentEpsilon = 1e-9;
     private featureTare = 0;
     private calibrationAddMeasurementBtn: HTMLButtonElement;
     private calibrationDownloadCsvBtn: HTMLButtonElement;
@@ -716,14 +718,6 @@ class App {
         this.liveIqI0El = <HTMLElement>document.getElementById('live-iq-i0');
         this.liveIqQ0El = <HTMLElement>document.getElementById('live-iq-q0');
 
-        this.calibrationInput = <HTMLInputElement>document.getElementById('input-calibration');
-        this.calibrationFactor = this.parseNumber(this.calibrationInput.value, this.calibrationFactor);
-
-        this.calibrationSaveBtn = <HTMLButtonElement>document.getElementById('btn-save-scale');
-        this.calibrationSaveBtn.addEventListener('click', () => {
-            this.calibrationFactor = this.parseNumber(this.calibrationInput.value, this.calibrationFactor);
-        });
-
         this.calibrationAddMeasurementBtn = <HTMLButtonElement>document.getElementById('btn-calibration-add-measurement');
         this.calibrationDownloadCsvBtn = <HTMLButtonElement>document.getElementById('btn-calibration-download-csv');
         this.calibrationToolStatusEl = <HTMLElement>document.getElementById('calibration-tool-status');
@@ -842,7 +836,7 @@ class App {
             featureUsed: this.sanitizeFinite(p.featureUsed),
             featureForScale: this.sanitizeFinite(p.featureUsed - activeOffset),
             activeOffset: this.sanitizeFinite(activeOffset),
-            calibrationFactor: this.sanitizeFinite(this.calibrationFactor),
+            calibrationFactor: 0,
             weightRaw: this.sanitizeFinite(p.weightRaw),
             weightUsed: this.sanitizeFinite(p.weightUsed),
             rmsIn1: this.sanitizeFinite(p.rmsIn1),
@@ -885,7 +879,7 @@ class App {
             featureUsedAvg: avg((sample) => sample.featureUsed),
             featureForScaleAvg: avg((sample) => sample.featureForScale),
             activeOffsetAvg: avg((sample) => sample.activeOffset),
-            calibrationFactorAtMeasurement: avg((sample) => sample.calibrationFactor),
+            calibrationFactorAtMeasurement: 0,
             weightRawAvg: avg((sample) => sample.weightRaw),
             weightUsedAvg: avg((sample) => sample.weightUsed),
             rmsIn1Avg: avg((sample) => sample.rmsIn1),
@@ -935,15 +929,15 @@ class App {
         return sum / samples.length;
     }
 
-    private computeSuggestedCalibrationFactor(realWeightKg: number | null, featureForScale: number): number | null {
-        if (realWeightKg === null) {
-            return null;
+    private computeExponentialWeightFromFeature(featureUsed: number): {weightKg: number; clamped: boolean; ratio: number} {
+        const feature = this.sanitizeFinite(featureUsed);
+        const ratio = (feature - this.expCalibrationC) / this.expCalibrationA;
+        const ratioSafe = Math.max(ratio, this.expCalibrationArgumentEpsilon);
+        const weightRaw = Math.log(ratioSafe) / this.expCalibrationBkg;
+        if (!Number.isFinite(weightRaw) || ratio <= 0 || weightRaw <= 0) {
+            return { weightKg: 0, clamped: true, ratio };
         }
-        const den = this.sanitizeFinite(featureForScale);
-        if (Math.abs(den) < 1e-12) {
-            return null;
-        }
-        return realWeightKg / den;
+        return { weightKg: weightRaw, clamped: false, ratio };
     }
 
     private renderCalibrationMeasurements(): void {
@@ -952,30 +946,45 @@ class App {
         }
 
         if (this.calibrationMeasurements.length <= 0) {
-            this.calibrationToolBodyEl.innerHTML = '<tr><td colspan="6">No measurements yet.</td></tr>';
+            this.calibrationToolBodyEl.innerHTML = '<tr><td colspan="8">No measurements yet.</td></tr>';
             this.calibrationToolAvgKEl.innerText = '-';
             this.updateCalibrationToolButtonsState();
             return;
         }
 
         const rows = this.calibrationMeasurements.slice().sort((a, b) => b.id - a.id);
+        const absErrorsKg: number[] = [];
         let html = '';
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             const realWeightText = row.realWeightKg === null ? '' : row.realWeightKg.toString();
-            const suggestedText = row.suggestedCalibrationFactor === null
-                ? '-'
-                : row.suggestedCalibrationFactor.toFixed(8);
-            const applyDisabled = row.suggestedCalibrationFactor === null ? 'disabled' : '';
+            const featureDisplay = row.phase3Feature === 'iq_in2'
+                ? this.sanitizeFinite(row.featureUsedAvg)
+                : this.sanitizeFinite(row.featureForScaleAvg);
+            const predicted = this.computeExponentialWeightFromFeature(featureDisplay).weightKg;
+            const predictedText = predicted.toFixed(4);
+            let errorText = '-';
+            let errorPctText = '-';
+            if (row.realWeightKg !== null) {
+                const errorKg = predicted - row.realWeightKg;
+                errorText = errorKg.toFixed(4);
+                absErrorsKg.push(Math.abs(errorKg));
+                if (Math.abs(row.realWeightKg) > 1e-12) {
+                    errorPctText = (100.0 * errorKg / row.realWeightKg).toFixed(2);
+                } else {
+                    errorPctText = predicted === 0 ? '0.00' : '-';
+                }
+            }
             html +=
                 '<tr>' +
                 '<td>' + row.id.toString() + '</td>' +
                 '<td>' + this.formatMeasurementTime(row.completedAtIso) + '</td>' +
-                '<td>' + this.sanitizeFinite(row.featureUsedAvg).toFixed(6) + '</td>' +
+                '<td>' + featureDisplay.toFixed(6) + '</td>' +
                 '<td><input type="text" class="form-control input-sm calibration-realweight-input" data-measurement-id="' + row.id.toString() + '" value="' + realWeightText + '" placeholder="kg"></td>' +
-                '<td><strong id="calibration-k-display-' + row.id.toString() + '">' + suggestedText + '</strong></td>' +
+                '<td><strong>' + predictedText + '</strong></td>' +
+                '<td>' + errorText + '</td>' +
+                '<td>' + errorPctText + '</td>' +
                 '<td>' +
-                '<button class="btn btn-xs btn-default calibration-apply-k-btn" data-measurement-id="' + row.id.toString() + '" ' + applyDisabled + '>Apply k</button> ' +
                 '<button class="btn btn-xs btn-danger calibration-delete-measurement-btn" data-measurement-id="' + row.id.toString() + '">Delete</button>' +
                 '</td>' +
                 '</tr>';
@@ -995,17 +1004,6 @@ class App {
             input.addEventListener('blur', () => this.onCalibrationRealWeightChanged(measurementId, input.value));
         }
 
-        const buttons = this.calibrationToolBodyEl.querySelectorAll('.calibration-apply-k-btn');
-        for (let i = 0; i < buttons.length; i++) {
-            const button = <HTMLButtonElement>buttons[i];
-            const idAttr = button.getAttribute('data-measurement-id');
-            if (!idAttr) {
-                continue;
-            }
-            const measurementId = parseInt(idAttr, 10);
-            button.addEventListener('click', () => this.applyMeasurementCalibrationFactor(measurementId));
-        }
-
         const deleteButtons = this.calibrationToolBodyEl.querySelectorAll('.calibration-delete-measurement-btn');
         for (let i = 0; i < deleteButtons.length; i++) {
             const button = <HTMLButtonElement>deleteButtons[i];
@@ -1017,21 +1015,14 @@ class App {
             button.addEventListener('click', () => this.deleteCalibrationMeasurement(measurementId));
         }
 
-        const validK: number[] = [];
-        for (let i = 0; i < this.calibrationMeasurements.length; i++) {
-            const k = this.calibrationMeasurements[i].suggestedCalibrationFactor;
-            if (k !== null && Number.isFinite(k)) {
-                validK.push(k);
-            }
-        }
-        if (validK.length <= 0) {
+        if (absErrorsKg.length <= 0) {
             this.calibrationToolAvgKEl.innerText = '-';
         } else {
-            let sumK = 0;
-            for (let i = 0; i < validK.length; i++) {
-                sumK += validK[i];
+            let sumAbsError = 0;
+            for (let i = 0; i < absErrorsKg.length; i++) {
+                sumAbsError += absErrorsKg[i];
             }
-            this.calibrationToolAvgKEl.innerText = (sumK / validK.length).toFixed(8);
+            this.calibrationToolAvgKEl.innerText = (sumAbsError / absErrorsKg.length).toFixed(4);
         }
 
         this.updateCalibrationToolButtonsState();
@@ -1044,20 +1035,8 @@ class App {
         }
         const parsed = this.parseLocalizedNumber(raw);
         record.realWeightKg = parsed === null ? null : parsed;
-        record.suggestedCalibrationFactor = this.computeSuggestedCalibrationFactor(record.realWeightKg, record.featureForScaleAvg);
         this.saveCalibrationMeasurements();
         this.renderCalibrationMeasurements();
-    }
-
-    private applyMeasurementCalibrationFactor(measurementId: number): void {
-        const record = this.calibrationMeasurements.find((item) => item.id === measurementId);
-        if (!record || record.suggestedCalibrationFactor === null) {
-            return;
-        }
-        this.calibrationFactor = record.suggestedCalibrationFactor;
-        this.calibrationInput.value = this.calibrationFactor.toFixed(8);
-        this.liveKFactorEl.innerText = this.calibrationFactor.toFixed(6);
-        this.setCalibrationToolStatus('Calibration factor from measurement #' + measurementId.toString() + ' applied.');
     }
 
     private deleteCalibrationMeasurement(measurementId: number): void {
@@ -1127,10 +1106,7 @@ class App {
                 if (hydrated === null) {
                     continue;
                 }
-                hydrated.suggestedCalibrationFactor = this.computeSuggestedCalibrationFactor(
-                    hydrated.realWeightKg,
-                    hydrated.featureForScaleAvg
-                );
+                hydrated.suggestedCalibrationFactor = null;
                 this.calibrationMeasurements.push(hydrated);
                 if (hydrated.id >= this.nextCalibrationMeasurementId) {
                     this.nextCalibrationMeasurementId = hydrated.id + 1;
@@ -1299,33 +1275,53 @@ class App {
             'completed_at_iso',
             'real_weight_kg',
             'feature_used_avg',
-            'suggested_k_kg_per_feature',
-            'iq_i0_avg',
-            'iq_q0_avg',
-            'iq_a_ref_avg',
+            'predicted_weight_kg',
+            'error_kg',
+            'error_percent',
+            'calibration_a',
+            'calibration_b_kg',
+            'calibration_c',
             'frequency_hz',
             'amplitude_vpp',
             'iq_ref_gate',
-            'phase4_calibration'
+            'output_channel',
+            'phase3_feature',
+            'phase4_calibration',
+            'window_samples'
         ];
 
         const lines: string[] = [headers.join(',')];
 
         for (let i = 0; i < this.calibrationMeasurements.length; i++) {
             const measurement = this.calibrationMeasurements[i];
+            const featureForPrediction = this.sanitizeFinite(measurement.featureForScaleAvg);
+            const predictedWeight = this.computeExponentialWeightFromFeature(featureForPrediction).weightKg;
+            let errorKg: number | null = null;
+            let errorPercent: number | null = null;
+            if (measurement.realWeightKg !== null) {
+                errorKg = predictedWeight - measurement.realWeightKg;
+                if (Math.abs(measurement.realWeightKg) > 1e-12) {
+                    errorPercent = 100.0 * errorKg / measurement.realWeightKg;
+                }
+            }
             const row = [
                 measurement.id,
                 measurement.completedAtIso,
                 measurement.realWeightKg,
                 measurement.featureUsedAvg,
-                measurement.suggestedCalibrationFactor,
-                measurement.iqI0Avg,
-                measurement.iqQ0Avg,
-                measurement.iqARefAvg,
+                predictedWeight,
+                errorKg,
+                errorPercent,
+                this.expCalibrationA,
+                this.expCalibrationBkg,
+                this.expCalibrationC,
                 measurement.frequencyHz,
                 measurement.amplitudeVpp,
                 measurement.iqRefGate,
-                measurement.phase4Calibration
+                measurement.outputChannel,
+                measurement.phase3Feature,
+                measurement.phase4Calibration,
+                measurement.windowSamples
             ];
             lines.push(row.map((value) => this.csvEscape(value)).join(','));
         }
@@ -1462,11 +1458,21 @@ class App {
                 ? 'Weight = Feature - Offset(Zero from IQ I0/Q0, active=0)'
                 : 'Weight = Feature - Offset(Feature)';
         } else if (calibrationMode === 'scale_only') {
-            calibrationFormula = 'Weight = Feature * Gain k';
+            calibrationFormula =
+                'Weight_kg = ln((Feature - C) / A) / B_kg, A=' +
+                this.expCalibrationA.toFixed(4) +
+                ', B_kg=' +
+                this.expCalibrationBkg.toFixed(6) +
+                ', C=' +
+                this.expCalibrationC.toFixed(4);
         } else {
-            calibrationFormula = isIq
-                ? 'Weight = (Feature - Offset(Zero from IQ I0/Q0, active=0)) * Gain k'
-                : 'Weight = (Feature - Offset(Feature)) * Gain k';
+            calibrationFormula =
+                'Weight_kg = ln(((Feature - Offset) - C) / A) / B_kg, A=' +
+                this.expCalibrationA.toFixed(4) +
+                ', B_kg=' +
+                this.expCalibrationBkg.toFixed(6) +
+                ', C=' +
+                this.expCalibrationC.toFixed(4);
         }
         this.liveCalibrationFormulaEl.innerText = calibrationFormula;
         this.liveOffsetDefinitionEl.innerText = isIq ? 'Offset (IQ I0/Q0)' : 'Offset (Feature)';
@@ -1566,7 +1572,10 @@ class App {
                     this.liveFeatureRawEl.innerText = result.featureRaw.toFixed(4);
                     this.liveFeatureUsedEl.innerText = result.featureUsed.toFixed(4);
                     this.liveFeatureTareEl.innerText = activeOffset.toFixed(4);
-                    this.liveKFactorEl.innerText = this.calibrationFactor.toFixed(6);
+                    this.liveKFactorEl.innerText =
+                        this.expCalibrationA.toFixed(4) + ', ' +
+                        this.expCalibrationBkg.toFixed(6) + ', ' +
+                        this.expCalibrationC.toFixed(4);
                     this.liveWeightRawEl.innerText = result.weightRaw.toFixed(4);
                     this.liveWeightUsedEl.innerText = result.weightUsed.toFixed(4);
                     this.liveIqIEl.innerText = result.iqI.toFixed(4);
@@ -2053,9 +2062,10 @@ class App {
             return featureUsed - offset;
         }
         if (mode === 'scale_only') {
-            return featureUsed * this.calibrationFactor;
+            return this.computeExponentialWeightFromFeature(featureUsed).weightKg;
         }
-        return (featureUsed - offset) * this.calibrationFactor;
+        const featureForScale = featureUsed - offset;
+        return this.computeExponentialWeightFromFeature(featureForScale).weightKg;
     }
 
     private buildCalibrationEvaluation(featureUsed: number, mode: Phase4Calibration): string {
@@ -2068,11 +2078,22 @@ class App {
             return 'Weight = ' + featureUsed.toFixed(4) + ' - ' + offset.toFixed(4) + ' = ' + result.toFixed(4);
         }
         if (mode === 'scale_only') {
-            const result = featureUsed * this.calibrationFactor;
-            return 'Weight = ' + featureUsed.toFixed(4) + ' * ' + this.calibrationFactor.toFixed(6) + ' = ' + result.toFixed(4);
+            const exp = this.computeExponentialWeightFromFeature(featureUsed);
+            const ratio = (featureUsed - this.expCalibrationC) / this.expCalibrationA;
+            const ratioText = Math.max(ratio, this.expCalibrationArgumentEpsilon).toFixed(6);
+            if (exp.clamped) {
+                return 'Weight_kg = ln(' + ratioText + ') / ' + this.expCalibrationBkg.toFixed(6) + ' -> clamped to 0.0000';
+            }
+            return 'Weight_kg = ln(' + ratioText + ') / ' + this.expCalibrationBkg.toFixed(6) + ' = ' + exp.weightKg.toFixed(4);
         }
-        const result = (featureUsed - offset) * this.calibrationFactor;
-        return 'Weight = (' + featureUsed.toFixed(4) + ' - ' + offset.toFixed(4) + ') * ' + this.calibrationFactor.toFixed(6) + ' = ' + result.toFixed(4);
+        const featureForScale = featureUsed - offset;
+        const exp = this.computeExponentialWeightFromFeature(featureForScale);
+        const ratio = (featureForScale - this.expCalibrationC) / this.expCalibrationA;
+        const ratioText = Math.max(ratio, this.expCalibrationArgumentEpsilon).toFixed(6);
+        if (exp.clamped) {
+            return 'Weight_kg = ln(' + ratioText + ') / ' + this.expCalibrationBkg.toFixed(6) + ' (from Feature-Offset) -> clamped to 0.0000';
+        }
+        return 'Weight_kg = ln(' + ratioText + ') / ' + this.expCalibrationBkg.toFixed(6) + ' (from Feature-Offset) = ' + exp.weightKg.toFixed(4);
     }
 
     private updateCalibrationUiState(): void {
@@ -2081,8 +2102,6 @@ class App {
         const scaleEnabled = this.usesScaleFactor(mode);
 
         this.tareBtn.disabled = !tareEnabled;
-        this.calibrationInput.disabled = !scaleEnabled;
-        this.calibrationSaveBtn.disabled = !scaleEnabled;
         this.weightUnitEl.innerText = scaleEnabled ? 'kg' : 'feature';
     }
 

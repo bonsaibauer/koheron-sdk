@@ -110,11 +110,9 @@
           </div>
           <button id="btn-tare" class="btn btn-warning btn-block">Tare (set zero)</button>
           <div style="margin-top: 14px;">
-            <div class="form-group">
-              <label for="input-calibration">Calibration factor k (kg per feature unit)</label>
-              <input type="number" id="input-calibration" class="form-control" value="0.093" step="0.0001">
+            <div class="result-box">
+              <div>Calibration: <strong>Exponential (A/B/C fixed)</strong></div>
             </div>
-            <button id="btn-save-scale" class="btn btn-success btn-block">Apply calibration</button>
             <div style="margin-top:8px;">Feature tare: <strong id="scale-tare-feature">0.0000</strong></div>
           </div>
         </section>
@@ -125,7 +123,7 @@
           <button id="btn-calibration-add-measurement" class="btn btn-primary btn-block" style="margin-top:8px;">Add measurement (3s countdown + 5s measurement)</button>
           <button id="btn-calibration-download-csv" class="btn btn-primary btn-block" style="margin-top:8px;">Download CSV</button>
           <div style="margin-top:8px;">Status: <strong id="calibration-tool-status">Ready.</strong></div>
-          <div style="margin-top:4px;">Recommended k (average): <strong id="calibration-tool-k-avg">-</strong></div>
+          <div style="margin-top:4px;">Average abs error [kg]: <strong id="calibration-tool-k-avg">-</strong></div>
           <div style="margin-top:8px; max-height:260px; overflow:auto;">
             <table class="table table-bordered table-condensed calibration-tool-table" style="margin-bottom:0;">
               <thead>
@@ -134,13 +132,15 @@
                   <th>Time</th>
                   <th>Feature (avg)</th>
                   <th>Actual weight [kg]</th>
-                  <th>Estimated k [kg/feature]</th>
+                  <th>Predicted weight [kg]</th>
+                  <th>Error [kg]</th>
+                  <th>Error [%]</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody id="calibration-tool-body">
                 <tr>
-                  <td colspan="6">No measurements yet.</td>
+                  <td colspan="8">No measurements yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -305,9 +305,9 @@
           <div class="form-group" style="margin-top:6px;">
             <label for="phase4-calibration">Method</label>
             <select id="phase4-calibration" class="form-control">
-              <option value="tare_scale" selected>Offset + Gain k (linear)</option>
+              <option value="tare_scale" selected>Offset + Exponential scale</option>
               <option value="tare_only">Offset only</option>
-              <option value="scale_only">Gain k only</option>
+              <option value="scale_only">Exponential scale only</option>
               <option value="off">Off</option>
             </select>
           </div>
@@ -315,16 +315,16 @@
           <button id="btn-phase4-save" class="btn btn-primary btn-block" style="margin-top:8px; margin-bottom:10px;">Apply Phase 4</button>
           <div><strong>Formula</strong></div>
           <div class="formula-box">
-            <div>Calibration formula: <strong id="live-calibration-formula">Weight = (Feature - Offset) * Gain k</strong></div>
+            <div>Calibration formula: <strong id="live-calibration-formula">Weight_kg = ln((Feature - C) / A) / B_kg</strong></div>
           </div>
           <div style="margin-top:10px;"><strong>Results</strong></div>
           <div class="result-box">
-            <div>Calibration evaluation: <strong id="live-calibration-eval">Weight = (0.0000 - 0.0000) * 0.093000 = 0.0000</strong></div>
+            <div>Calibration evaluation: <strong id="live-calibration-eval">Weight_kg = ln((0.0000 - -5.9575) / 5.5777) / 1.142000 = 0.0000</strong></div>
             <div>Offset definition: <strong id="live-offset-definition">Offset (Feature)</strong></div>
             <div>Offset (active): <strong id="live-feature-tare">0.0000</strong></div>
             <div>IQ I0: <strong id="live-iq-i0">0.0000</strong></div>
             <div>IQ Q0: <strong id="live-iq-q0">0.0000</strong></div>
-            <div>Gain k: <strong id="live-k-factor">0.0930</strong></div>
+            <div>Calibration (A, B_kg, C): <strong id="live-k-factor">5.5777, 1.1420, -5.9575</strong></div>
             <div>Weight (raw): <strong id="live-weight-raw">0.0000</strong></div>
           </div>
         </section>
