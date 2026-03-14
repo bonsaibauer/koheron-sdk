@@ -22,9 +22,9 @@ class ScaleSine {
     // - DAC plot limit: 2048 points
     // - LEDs reset to 0
     explicit ScaleSine(Context& ctx_)
-    : ctl(ctx.mm.get<mem::control>())
-    , adc_map(ctx.mm.get<mem::adc>())
-    , dac_map(ctx.mm.get<mem::dac>())
+    : ctl(ctx_.mm.get<mem::control>())
+    , adc_map(ctx_.mm.get<mem::adc>())
+    , dac_map(ctx_.mm.get<mem::dac>())
     {
         initialize_dac_waveform();
         set_leds(0);
