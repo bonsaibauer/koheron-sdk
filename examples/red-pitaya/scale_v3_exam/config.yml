@@ -1,5 +1,5 @@
 ---
-name: scale_v2
+name: scale_v3_exam
 board: boards/red-pitaya
 version: 0.3.0
 
@@ -8,9 +8,7 @@ cores:
   - fpga/cores/redp_dac_v1_0
   - fpga/cores/axi_ctl_register_v1_0
   - fpga/cores/axi_sts_register_v1_0
-  - fpga/cores/edge_detector_v1_0
-  - fpga/cores/comparator_v1_0
-  - ./address_counter_v1_0
+  - ./sample_counter_v1_0
 
 memory:
   - name: control
@@ -55,6 +53,5 @@ web:
   - web/main.css
   - ./web/connector.ts
   - ./web/plot-basics.ts
-  - ./web/plot-basics.html
   - ./web/index.html
   - ./web/scale.html

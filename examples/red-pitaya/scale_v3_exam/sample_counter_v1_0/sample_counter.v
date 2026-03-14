@@ -1,12 +1,14 @@
 `timescale 1 ns / 1 ps
 
-// Counter for BRAM addressing
-//
-// - `address` (DAC) is free-running (continuous replay)
-// - `address_adc` (ADC) runs only during capture
-// - trigger arms a capture; capture starts at next DAC wrap for stable frame phase
+// ----------------------------
+// Module: Sample Counter
+// ----------------------------
+// Sample memory address generator with phase-stable capture:
+// - `address` (DAC) runs continuously (replay loop)
+// - `address_adc` (ADC) runs only while capture is active
+// - `trig` only arms capture; start is aligned to next DAC wrap
 
-module address_counter #
+module sample_counter #
 (
   parameter integer COUNT_WIDTH = 13
 )
@@ -34,19 +36,21 @@ module address_counter #
   initial capture_active = 0;
   initial wen_reg = 0;
 
+  // ----------------------------
+  // Module: Counter Runtime
+  // ----------------------------
   always @(posedge clk) begin
     trig_reg <= trig;
 
     if (clken) begin
-      // Keep DAC address running continuously.
+      // DAC replay address.
       if (dac_count == count_max) begin
         dac_count <= 0;
       end else begin
         dac_count <= dac_count + 1;
       end
 
-      // Trigger only arms capture. Capture starts on next DAC wrap so
-      // ADC frame start stays phase-stable against replay.
+      // Trigger arm and aligned capture start.
       if (trig ^ trig_reg) begin
         capture_armed <= 1;
       end
@@ -64,7 +68,7 @@ module address_counter #
         adc_count <= 0;
       end
 
-      // Write-enable is active only during ADC capture.
+      // ADC write-enable during capture only.
       if (capture_active || (capture_armed && (dac_count == count_max))) begin
         wen_reg <= 1;
       end else begin
@@ -79,6 +83,9 @@ module address_counter #
     end
   end
 
+  // ----------------------------
+  // Module: Outputs
+  // ----------------------------
   assign address = dac_count << 2;
   assign address_adc = adc_count << 2;
   assign wen = {4{wen_reg}};

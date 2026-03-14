@@ -1,4 +1,4 @@
-set display_name {Address counter}
+set display_name {Sample counter}
 
 set core [ipx::current_core]
 

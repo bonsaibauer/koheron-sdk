@@ -137,7 +137,7 @@ xilinx.com:ip:axi_clock_converter:2.1\
 xilinx.com:ip:xadc_wiz:3.3\
 xilinx.com:ip:axi_bram_ctrl:4.1\
 xilinx.com:ip:blk_mem_gen:8.4\
-koheron:user:address_counter:1.0\
+koheron:user:sample_counter:1.0\
 xilinx.com:ip:xlconstant:1.1\
 xilinx.com:ip:clk_wiz:6.0\
 pavel-demin:user:redp_adc:1.0\
@@ -939,9 +939,9 @@ proc create_root_design { parentCell } {
   set_property CONFIG.Memory_Type {True_Dual_Port_RAM} $blk_mem_gen_dac
 
 
-  # Create instance: address_counter, and set properties
-  set address_counter [ create_bd_cell -type ip -vlnv koheron:user:address_counter:1.0 address_counter ]
-  set_property CONFIG.COUNT_WIDTH {14} $address_counter
+  # Create instance: sample_counter, and set properties
+  set sample_counter [ create_bd_cell -type ip -vlnv koheron:user:sample_counter:1.0 sample_counter ]
+  set_property CONFIG.COUNT_WIDTH {14} $sample_counter
 
 
   # Create instance: const_v1_w1, and set properties
@@ -1073,7 +1073,7 @@ proc create_root_design { parentCell } {
   [get_bd_pins sts/m_axi_aclk] \
   [get_bd_pins axi_clk_conv_xadc/m_axi_aclk] \
   [get_bd_pins xadc/s_axi_aclk] \
-  [get_bd_pins address_counter/clk] \
+  [get_bd_pins sample_counter/clk] \
   [get_bd_pins blk_mem_gen_adc/clkb] \
   [get_bd_pins blk_mem_gen_dac/clkb]
   connect_bd_net -net adc_dac_adc_clk_source  [get_bd_pins adc_dac/adc_clk_source] \
@@ -1092,11 +1092,11 @@ proc create_root_design { parentCell } {
   [get_bd_pins adc_dac/adc_dat_a_i]
   connect_bd_net -net adc_dat_b_i_1  [get_bd_ports adc_dat_b_i] \
   [get_bd_pins adc_dac/adc_dat_b_i]
-  connect_bd_net -net address_counter_address_dac  [get_bd_pins address_counter/address] \
+  connect_bd_net -net sample_counter_address_dac  [get_bd_pins sample_counter/address] \
   [get_bd_pins blk_mem_gen_dac/addrb]
-  connect_bd_net -net address_counter_address_adc  [get_bd_pins address_counter/address_adc] \
+  connect_bd_net -net sample_counter_address_adc  [get_bd_pins sample_counter/address_adc] \
   [get_bd_pins blk_mem_gen_adc/addrb]
-  connect_bd_net -net address_counter_wen  [get_bd_pins address_counter/wen] \
+  connect_bd_net -net sample_counter_wen  [get_bd_pins sample_counter/wen] \
   [get_bd_pins blk_mem_gen_adc/web]
   connect_bd_net -net blk_mem_gen_dac_doutb  [get_bd_pins blk_mem_gen_dac/doutb] \
   [get_bd_pins slice_13_0_blk_mem_gen_dac_doutb/Din] \
@@ -1114,7 +1114,7 @@ proc create_root_design { parentCell } {
   connect_bd_net -net const_v0_w4_dout  [get_bd_pins const_v0_w4/dout] \
   [get_bd_pins blk_mem_gen_dac/web]
   connect_bd_net -net const_v1_w1_dout  [get_bd_pins const_v1_w1/dout] \
-  [get_bd_pins address_counter/clken] \
+  [get_bd_pins sample_counter/clken] \
   [get_bd_pins blk_mem_gen_adc/enb] \
   [get_bd_pins blk_mem_gen_dac/enb]
   connect_bd_net -net ctl_led  [get_bd_pins ctl/led] \
@@ -1150,9 +1150,9 @@ proc create_root_design { parentCell } {
   [get_bd_pins proc_sys_reset_0/ext_reset_in] \
   [get_bd_pins proc_sys_reset_adc_clk/ext_reset_in]
   connect_bd_net -net slice_0_0_ctl_trig1_Dout  [get_bd_pins slice_0_0_ctl_trig1/Dout] \
-  [get_bd_pins address_counter/count_max]
+  [get_bd_pins sample_counter/count_max]
   connect_bd_net -net slice_0_0_ctl_trig_Dout  [get_bd_pins slice_0_0_ctl_trig/Dout] \
-  [get_bd_pins address_counter/trig]
+  [get_bd_pins sample_counter/trig]
   connect_bd_net -net slice_7_0_ctl_led_Dout  [get_bd_pins slice_7_0_ctl_led/Dout] \
   [get_bd_ports led_o]
   connect_bd_net -net xadc_ip2intc_irpt  [get_bd_pins xadc/ip2intc_irpt] \
