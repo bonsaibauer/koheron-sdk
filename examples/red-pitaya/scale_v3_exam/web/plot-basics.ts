@@ -4,7 +4,6 @@ class PlotBasics {
     // Module: Plot State
     // ----------------------------
     private options: jquery.flot.plotOptions;
-    private plot: jquery.flot.plot;
 
     // ----------------------------
     // Module: Initialization
@@ -37,8 +36,6 @@ class PlotBasics {
 
         (<any>this.options.yaxis).axisLabel = 'Spannung [V]';
         (<any>this.options.xaxis).axisLabel = 'Zeit [us]';
-
-        this.plot = $.plot(this.plotPlaceholder, [], this.options);
     }
 
     // ----------------------------
@@ -47,8 +44,7 @@ class PlotBasics {
     redrawSeries(series: jquery.flot.dataSeries[], rangeX: jquery.flot.range): void {
         this.options.xaxis.min = rangeX.from;
         this.options.xaxis.max = rangeX.to;
-        this.plot = $.plot(this.plotPlaceholder, series, this.options);
-        this.plot.setupGrid();
+        $.plot(this.plotPlaceholder, series, this.options);
     }
 
 }

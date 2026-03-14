@@ -10,6 +10,7 @@ class App {
     // - Calibration: hybrid exponential/linear mapping
     // - LEDs: 8 LEDs, 200 g per LED step
     private readonly sampleRateHz = 125000000;
+    private readonly usPerSample = 1e6 / this.sampleRateHz;
     private readonly signalFrequencyHz = 100000;
     private readonly featureWindowSamples = 8000;
     private readonly plotMaxPoints = 2048;
@@ -31,9 +32,8 @@ class App {
 
     private runningFrameStartUs = 0;
 
-    private iqBaseI = 0;
-    private iqBaseQ = 0;
-    private iqBaseInitialized = false;
+    private iqBaseI = Number.NaN;
+    private iqBaseQ = Number.NaN;
 
     private featureTare = 0;
     private lastFeatureRaw = 0;
@@ -81,12 +81,10 @@ class App {
         this.tareEl = <HTMLElement>document.getElementById('scale-tare-feature');
 
         const tareButton = <HTMLButtonElement>document.getElementById('btn-tare');
-        if (tareButton) {
-            tareButton.addEventListener('click', () => {
-                this.featureTare = this.lastFeatureRaw;
-                this.tareEl.innerText = this.featureTare.toFixed(4);
-            });
-        }
+        tareButton.addEventListener('click', () => {
+            this.featureTare = this.lastFeatureRaw;
+            this.tareEl.innerText = this.featureTare.toFixed(4);
+        });
 
         this.tareEl.innerText = this.featureTare.toFixed(4);
     }
@@ -95,10 +93,6 @@ class App {
         const indicators = <HTMLElement>document.getElementById('led-indicators');
         this.ledCountEl = <HTMLElement>document.getElementById('led-active-count');
         this.ledWeightEl = <HTMLElement>document.getElementById('led-weight-g');
-
-        if (!indicators) {
-            return;
-        }
 
         indicators.innerHTML = '';
         this.ledDots = [];
@@ -123,7 +117,7 @@ class App {
                 }
 
                 const frameStartUs = this.runningFrameStartUs;
-                const frameEndUs = frameStartUs + this.sampleIndexToMicroseconds(sampleCount - 1);
+                const frameEndUs = frameStartUs + (sampleCount - 1) * this.usPerSample;
 
                 const in1Plot = this.decimateToTimePoints(in1Raw, frameStartUs);
                 const in2Plot = this.decimateToTimePoints(in2Raw, frameStartUs);
@@ -171,8 +165,14 @@ class App {
         const start = n - windowCount;
 
         const omega = 2.0 * Math.PI * this.signalFrequencyHz / this.sampleRateHz;
-        const meanIn1 = this.computeMean(in1, start, windowCount);
-        const meanIn2 = this.computeMean(in2, start, windowCount);
+        let meanIn1 = 0;
+        let meanIn2 = 0;
+        for (let i = 0; i < windowCount; i++) {
+            meanIn1 += in1[start + i];
+            meanIn2 += in2[start + i];
+        }
+        meanIn1 /= windowCount;
+        meanIn2 /= windowCount;
         const scale = 2.0 / windowCount;
 
         let xSin = 0;
@@ -204,10 +204,9 @@ class App {
         const iqI = (xI * rI + xQ * rQ) / den;
         const iqQ = (xQ * rI - xI * rQ) / den;
 
-        if (!this.iqBaseInitialized) {
+        if (!Number.isFinite(this.iqBaseI) || !Number.isFinite(this.iqBaseQ)) {
             this.iqBaseI = iqI;
             this.iqBaseQ = iqQ;
-            this.iqBaseInitialized = true;
         }
 
         const dI = iqI - this.iqBaseI;
@@ -263,29 +262,15 @@ class App {
             }
         }
 
-        if (this.ledCountEl) {
-            this.ledCountEl.innerText = activeLeds.toString() + ' / ' + this.ledCount.toString();
-        }
-
-        if (this.ledWeightEl) {
-            this.ledWeightEl.innerText = grams.toFixed(0) + ' g';
-        }
+        this.ledCountEl.innerText = activeLeds.toString() + ' / ' + this.ledCount.toString();
+        this.ledWeightEl.innerText = grams.toFixed(0) + ' g';
     }
 
     // ----------------------------
     // Module: Utility Helpers
     // ----------------------------
     private isCurveChecked(elementId: string): boolean {
-        const checkbox = <HTMLInputElement>document.getElementById(elementId);
-        return checkbox ? checkbox.checked : true;
-    }
-
-    private computeMean(values: number[], start: number, count: number): number {
-        let sum = 0;
-        for (let i = 0; i < count; i++) {
-            sum += values[start + i];
-        }
-        return sum / Math.max(1, count);
+        return (<HTMLInputElement>document.getElementById(elementId)).checked;
     }
 
     private decimateToTimePoints(values: number[], offsetUs: number): number[][] {
@@ -297,7 +282,7 @@ class App {
 
         const step = Math.max(1, Math.ceil(n / this.plotMaxPoints));
         for (let i = 0; i < n; i += step) {
-            points.push([offsetUs + this.sampleIndexToMicroseconds(i), values[i]]);
+            points.push([offsetUs + i * this.usPerSample, values[i]]);
         }
         return points;
     }
@@ -305,13 +290,9 @@ class App {
     private indexedToTimePoints(points: number[][], offsetUs: number): number[][] {
         const out: number[][] = new Array(points.length);
         for (let i = 0; i < points.length; i++) {
-            out[i] = [offsetUs + this.sampleIndexToMicroseconds(points[i][0]), points[i][1]];
+            out[i] = [offsetUs + points[i][0] * this.usPerSample, points[i][1]];
         }
         return out;
-    }
-
-    private sampleIndexToMicroseconds(sampleIndex: number): number {
-        return (sampleIndex / this.sampleRateHz) * 1e6;
     }
 
 }

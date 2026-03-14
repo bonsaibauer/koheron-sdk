@@ -83,8 +83,7 @@ class ScaleSine {
     uint32_t waveform_len = dac_size;
     uint32_t waveform_periods = 1;
 
-    const uint32_t plot_max_points = 2048;
-    const uint32_t dac_decimation_step = (dac_size + plot_max_points - 1) / plot_max_points;
+    const uint32_t dac_decimation_step = (dac_size + 2047) / 2048;
     const double fs = 125000000.0;
     const uint32_t dac_resolution = 1 << 14;
 
