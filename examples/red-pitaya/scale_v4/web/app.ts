@@ -247,7 +247,7 @@ class App {
     private calibrationToolStatusEl: HTMLElement;
     private calibrationToolAvgKEl: HTMLElement;
     private calibrationToolBodyEl: HTMLElement;
-    private readonly calibrationToolStorageKey = 'scale_v3_calibration_tool_measurements_v1';
+    private readonly calibrationToolStorageKey = 'scale_v4_calibration_tool_measurements_v1';
     private calibrationMeasurements: CalibrationMeasurementRecord[] = [];
     private nextCalibrationMeasurementId = 1;
     private calibrationMeasurementRunning = false;
@@ -1388,7 +1388,7 @@ class App {
         const hh = now.getHours().toString().padStart(2, '0');
         const mi = now.getMinutes().toString().padStart(2, '0');
         const ss = now.getSeconds().toString().padStart(2, '0');
-        return 'scale_v3_calibration_' + yyyy + mm + dd + '_' + hh + mi + ss + '.csv';
+        return 'scale_v4_calibration_' + yyyy + mm + dd + '_' + hh + mi + ss + '.csv';
     }
 
     // ----------------------------

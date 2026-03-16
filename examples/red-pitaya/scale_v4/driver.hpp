@@ -48,7 +48,7 @@ class AdcDacBram {
     // Module: DAC Configuration
     // ----------------------------
     void set_dac_function(uint32_t function, double f) {
-        // Sine only in scale_v2: function selector is intentionally ignored.
+        // Sine only in scale_v4: function selector is intentionally ignored.
         (void)function;
         const double f_cmd = std::max(1.0, std::min(f, max_output_frequency_hz));
 
