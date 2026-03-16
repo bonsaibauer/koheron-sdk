@@ -229,6 +229,7 @@ class App {
     // State: Scale Panel Fields
     // ----------------------------
     private scaleTareFeatureEl: HTMLElement;
+    private scaleTareFeatureKgEl: HTMLElement;
     private weightEl: HTMLElement;
     private weightUnitEl: HTMLElement;
 
@@ -242,6 +243,8 @@ class App {
     private readonly hybridCalibrationSwitchGram = 1000.0;
     private readonly expCalibrationArgumentEpsilon = 1e-9;
     private featureTare = 0;
+    private tareKgBias = 0;
+    private tareDisplayKg = 0;
     private calibrationAddMeasurementBtn: HTMLButtonElement;
     private calibrationDownloadCsvBtn: HTMLButtonElement;
     private calibrationToolStatusEl: HTMLElement;
@@ -685,6 +688,7 @@ class App {
         this.weightEl = <HTMLElement>document.getElementById('weight-value');
         this.weightUnitEl = <HTMLElement>document.getElementById('weight-unit');
         this.scaleTareFeatureEl = <HTMLElement>document.getElementById('scale-tare-feature');
+        this.scaleTareFeatureKgEl = <HTMLElement>document.getElementById('scale-tare-feature-kg');
 
         this.liveFeatureFormulaEl = <HTMLElement>document.getElementById('live-feature-formula');
         this.liveCalibrationFormulaEl = <HTMLElement>document.getElementById('live-calibration-formula');
@@ -736,6 +740,7 @@ class App {
             if (!this.usesTare(mode)) {
                 return;
             }
+            this.tareDisplayKg = Math.max(0, this.weightTraceValue);
             if (this.getPhase3FeatureMethod() === 'iq_in2') {
                 // In IQ signed projection mode, tare defines the projection origin in I/Q space.
                 this.iqProjectionBaseI = this.lastIqI;
@@ -747,13 +752,16 @@ class App {
             } else {
                 this.featureTare = this.featureTraceValue;
             }
-            this.scaleTareFeatureEl.innerText = this.featureTare.toFixed(4);
+            const featureForScaleAtTare = this.getFeatureForScaleAtTareSnapshot();
+            this.tareKgBias = this.computeHybridWeightFromFeature(featureForScaleAtTare).weightKg;
+            this.resetSmoothingState();
+            this.updateScaleTareIndicators();
             this.liveFeatureTareEl.innerText = this.getActiveCalibrationOffset().toFixed(4);
             this.liveIqI0El.innerText = this.iqProjectionBaseI.toFixed(4);
             this.liveIqQ0El.innerText = this.iqProjectionBaseQ.toFixed(4);
         });
 
-        this.scaleTareFeatureEl.innerText = this.featureTare.toFixed(4);
+        this.updateScaleTareIndicators();
         this.loadCalibrationMeasurements();
         this.renderCalibrationMeasurements();
         this.updateCalibrationUiState();
@@ -958,6 +966,71 @@ class App {
             return { weightKg: 0, clamped: true, branch, ratio, expWeightKg, linWeightKg };
         }
         return { weightKg: weightRaw, clamped: false, branch, ratio, expWeightKg, linWeightKg };
+    }
+
+    private computeHybridWeightFromFeatureForMode(featureUsed: number, mode: Phase4Calibration): {
+        weightKg: number;
+        clamped: boolean;
+        branch: 'exp' | 'lin';
+        ratio: number;
+        expWeightKg: number;
+        linWeightKg: number;
+        expOutKg: number;
+        linOutKg: number;
+    } {
+        const hybrid = this.computeHybridWeightFromFeature(featureUsed);
+        const expOutKg = this.sanitizeFinite(this.applyTareKgBias(hybrid.expWeightKg, mode));
+        const linOutKg = this.sanitizeFinite(this.applyTareKgBias(hybrid.linWeightKg, mode));
+
+        if (mode !== 'tare_scale') {
+            return {
+                weightKg: hybrid.weightKg,
+                clamped: hybrid.clamped,
+                branch: hybrid.branch,
+                ratio: hybrid.ratio,
+                expWeightKg: hybrid.expWeightKg,
+                linWeightKg: hybrid.linWeightKg,
+                expOutKg,
+                linOutKg
+            };
+        }
+
+        const switchKg = this.hybridCalibrationSwitchGram / 1000.0;
+        const expValid = Number.isFinite(hybrid.expWeightKg) && hybrid.ratio > 0;
+        const linValid = Number.isFinite(hybrid.linWeightKg);
+        let branch: 'exp' | 'lin' = 'exp';
+        if (!expValid && linValid) {
+            branch = 'lin';
+        } else if (!linValid || expOutKg <= switchKg) {
+            branch = 'exp';
+        } else {
+            branch = 'lin';
+        }
+
+        const weightSelected = branch === 'exp' ? expOutKg : linOutKg;
+        if (!Number.isFinite(weightSelected) || weightSelected <= 0) {
+            return {
+                weightKg: 0,
+                clamped: true,
+                branch,
+                ratio: hybrid.ratio,
+                expWeightKg: hybrid.expWeightKg,
+                linWeightKg: hybrid.linWeightKg,
+                expOutKg,
+                linOutKg
+            };
+        }
+
+        return {
+            weightKg: weightSelected,
+            clamped: false,
+            branch,
+            ratio: hybrid.ratio,
+            expWeightKg: hybrid.expWeightKg,
+            linWeightKg: hybrid.linWeightKg,
+            expOutKg,
+            linOutKg
+        };
     }
 
     private renderCalibrationMeasurements(): void {
@@ -1500,7 +1573,7 @@ class App {
                 this.linCalibrationFeatureOffset.toFixed(4);
         } else {
             calibrationFormula =
-                'Hybrid: if Exp(Feature-Offset)<=1000g then Weight_kg=ln((((Feature-Offset)-C)/A))/B_kg else Weight_kg=((((Feature-Offset)-N)/M))/1000, A=' +
+                'Hybrid: Exp_out=max(0, Exp(Feature-Offset)-Tare_kg), Lin_out=max(0, Lin(Feature-Offset)-Tare_kg), if Exp_out<=1000g then use Exp_out else Lin_out, A=' +
                 this.expCalibrationA.toFixed(4) +
                 ', B_kg=' +
                 this.expCalibrationBkg.toFixed(6) +
@@ -1603,7 +1676,7 @@ class App {
                     this.lastActiveCalibrationOffset = activeOffset;
 
                     this.weightEl.innerText = result.weightUsed.toFixed(3);
-                    this.scaleTareFeatureEl.innerText = this.featureTare.toFixed(4);
+                    this.updateScaleTareIndicators();
 
                     this.liveInputEl.innerText = this.getPhase2InputLabel(this.getPhase2InputMode());
                     this.liveFeatureRawEl.innerText = result.featureRaw.toFixed(4);
@@ -2094,6 +2167,25 @@ class App {
         return this.featureTare;
     }
 
+    private getFeatureForScaleAtTareSnapshot(): number {
+        if (this.getPhase3FeatureMethod() === 'iq_in2') {
+            return 0;
+        }
+        return this.sanitizeFinite(this.featureTraceValue - this.featureTare);
+    }
+
+    private applyTareKgBias(weightKg: number, mode: Phase4Calibration): number {
+        if (mode !== 'tare_scale') {
+            return weightKg;
+        }
+        return Math.max(0, weightKg - this.tareKgBias);
+    }
+
+    private updateScaleTareIndicators(): void {
+        this.scaleTareFeatureEl.innerText = this.featureTare.toFixed(4);
+        this.scaleTareFeatureKgEl.innerText = this.tareDisplayKg.toFixed(4);
+    }
+
     private applyCalibration(featureUsed: number, mode: Phase4Calibration): number {
         const offset = this.getActiveCalibrationOffset();
         if (mode === 'off') {
@@ -2106,7 +2198,7 @@ class App {
             return this.computeHybridWeightFromFeature(featureUsed).weightKg;
         }
         const featureForScale = featureUsed - offset;
-        return this.computeHybridWeightFromFeature(featureForScale).weightKg;
+        return this.computeHybridWeightFromFeatureForMode(featureForScale, mode).weightKg;
     }
 
     private buildCalibrationEvaluation(featureUsed: number, mode: Phase4Calibration): string {
@@ -2134,19 +2226,20 @@ class App {
             return 'Hybrid[Lin]: Weight_kg = (' + linNumerator + ' / ' + this.linCalibrationFeaturePerGram.toFixed(6) + ') / 1000 = ' + hybrid.weightKg.toFixed(4);
         }
         const featureForScale = featureUsed - offset;
-        const hybrid = this.computeHybridWeightFromFeature(featureForScale);
+        const hybrid = this.computeHybridWeightFromFeatureForMode(featureForScale, mode);
+        const tareText = this.tareKgBias.toFixed(4);
+        const switchKg = (this.hybridCalibrationSwitchGram / 1000.0).toFixed(3);
+        const selectedOutKg = hybrid.weightKg.toFixed(4);
         if (hybrid.branch === 'exp') {
             const ratioText = Math.max(hybrid.ratio, this.expCalibrationArgumentEpsilon).toFixed(6);
-            if (hybrid.clamped) {
-                return 'Hybrid[Exp]: Weight_kg = ln(' + ratioText + ') / ' + this.expCalibrationBkg.toFixed(6) + ' (from Feature-Offset) -> clamped to 0.0000';
-            }
-            return 'Hybrid[Exp]: Weight_kg = ln(' + ratioText + ') / ' + this.expCalibrationBkg.toFixed(6) + ' (from Feature-Offset) = ' + hybrid.weightKg.toFixed(4);
+            return 'Hybrid[Exp]: Exp_out=max(0, ln(' + ratioText + ')/' + this.expCalibrationBkg.toFixed(6) +
+                ' - Tare_kg(' + tareText + '))=' + hybrid.expOutKg.toFixed(4) +
+                'kg, Lin_out=' + hybrid.linOutKg.toFixed(4) + 'kg, switch=' + switchKg + 'kg => ' + selectedOutKg;
         }
         const linNumerator = (featureForScale - this.linCalibrationFeatureOffset).toFixed(6);
-        if (hybrid.clamped) {
-            return 'Hybrid[Lin]: Weight_kg = (' + linNumerator + ' / ' + this.linCalibrationFeaturePerGram.toFixed(6) + ') / 1000 (from Feature-Offset) -> clamped to 0.0000';
-        }
-        return 'Hybrid[Lin]: Weight_kg = (' + linNumerator + ' / ' + this.linCalibrationFeaturePerGram.toFixed(6) + ') / 1000 (from Feature-Offset) = ' + hybrid.weightKg.toFixed(4);
+        return 'Hybrid[Lin]: Lin_out=max(0, (' + linNumerator + ' / ' + this.linCalibrationFeaturePerGram.toFixed(6) +
+            ')/1000 - Tare_kg(' + tareText + '))=' + hybrid.linOutKg.toFixed(4) +
+            'kg, Exp_out=' + hybrid.expOutKg.toFixed(4) + 'kg, switch=' + switchKg + 'kg => ' + selectedOutKg;
     }
 
     private updateCalibrationUiState(): void {
