@@ -338,15 +338,8 @@
             <label for="phase5-smoothing">Method</label>
             <select id="phase5-smoothing" class="form-control">
               <option value="none">Off</option>
-              <option value="moving_average">Moving Average</option>
-              <option value="rms_window">Signed RMS window</option>
-              <option value="true_rms_window">Signed True RMS window</option>
               <option value="ema" selected>EMA</option>
             </select>
-          </div>
-          <div class="form-group" id="smoothing-window-group" style="display:none; margin-top:8px;">
-            <label for="smoothing-window">Moving Average M (Frames)</label>
-            <input type="number" id="smoothing-window" class="form-control" value="5" min="1" max="100" step="1">
           </div>
           <div class="form-group" id="smoothing-alpha-group" style="display:none;">
             <label for="smoothing-alpha">EMA alpha</label>

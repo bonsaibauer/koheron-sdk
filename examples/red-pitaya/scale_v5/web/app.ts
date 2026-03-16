@@ -4,7 +4,7 @@
 type Phase2Input = 'in1' | 'in2' | 'in1_minus_in2' | 'in1_div_in2' | 'iq_pair';
 type Phase3Feature = 'rms' | 'true_rms' | 'iq_in2';
 type Phase4Calibration = 'off' | 'tare_only' | 'scale_only' | 'tare_scale';
-type Phase5Smoothing = 'none' | 'moving_average' | 'rms_window' | 'true_rms_window' | 'ema';
+type Phase5Smoothing = 'none' | 'ema';
 type DriverAction =
     'rms' |
     'true_rms';
@@ -101,7 +101,6 @@ interface CalibrationMeasurementRecord {
     phase5Smoothing: Phase5Smoothing;
     windowSamples: number;
     iqRefGate: number;
-    smoothingWindow: number;
     smoothingAlpha: number;
     divisionEpsilon: number;
     divisionClip: number;
@@ -164,13 +163,11 @@ class App {
 
     private rmsWindowSamplesInput: HTMLInputElement;
     private iqRefGateInput: HTMLInputElement;
-    private smoothingWindowInput: HTMLInputElement;
     private smoothingAlphaInput: HTMLInputElement;
     private divisionEpsilonInput: HTMLInputElement;
     private divisionClipInput: HTMLInputElement;
     private plotMaxPointsInput: HTMLInputElement;
     private iqRefGateGroup: HTMLElement;
-    private smoothingWindowGroup: HTMLElement;
     private smoothingAlphaGroup: HTMLElement;
     private divisionEpsilonGroup: HTMLElement;
     private divisionClipGroup: HTMLElement;
@@ -182,7 +179,6 @@ class App {
     private appliedWindowSamples = 8000;
     private readonly iqReferenceMinAmplitudeDefault = 0.05;
     private appliedIqReferenceMinAmplitude = this.iqReferenceMinAmplitudeDefault;
-    private appliedSmoothingWindow = 5;
     private appliedSmoothingAlpha = 0.10;
     private appliedDivisionEpsilon = 0.01;
     private appliedDivisionClip = 100.0;
@@ -293,7 +289,6 @@ class App {
     // ----------------------------
     // State: Smoothing Runtime
     // ----------------------------
-    private smoothingHistory: number[] = [];
     private emaWeight = 0;
     private emaInitialized = false;
     private lastSmoothingEvaluationText = 'Off';
@@ -567,13 +562,11 @@ class App {
 
         this.rmsWindowSamplesInput = <HTMLInputElement>document.getElementById('rms-window-samples');
         this.iqRefGateInput = <HTMLInputElement>document.getElementById('iq-ref-gate');
-        this.smoothingWindowInput = <HTMLInputElement>document.getElementById('smoothing-window');
         this.smoothingAlphaInput = <HTMLInputElement>document.getElementById('smoothing-alpha');
         this.divisionEpsilonInput = <HTMLInputElement>document.getElementById('division-epsilon');
         this.divisionClipInput = <HTMLInputElement>document.getElementById('division-clip');
         this.plotMaxPointsInput = <HTMLInputElement>document.getElementById('plot-max-points');
         this.iqRefGateGroup = <HTMLElement>document.getElementById('iq-ref-gate-group');
-        this.smoothingWindowGroup = <HTMLElement>document.getElementById('smoothing-window-group');
         this.smoothingAlphaGroup = <HTMLElement>document.getElementById('smoothing-alpha-group');
         this.divisionEpsilonGroup = <HTMLElement>document.getElementById('division-epsilon-group');
         this.divisionClipGroup = <HTMLElement>document.getElementById('division-clip-group');
@@ -642,15 +635,13 @@ class App {
 
     private applyPhase5Settings(): void {
         const mode = this.phase5SmoothingSelect.value;
-        if (mode === 'none' || mode === 'moving_average' || mode === 'rms_window' || mode === 'true_rms_window' || mode === 'ema') {
+        if (mode === 'none' || mode === 'ema') {
             this.appliedPhase5Smoothing = mode;
         }
 
-        this.appliedSmoothingWindow = this.clampSmoothingWindow(this.parseNumber(this.smoothingWindowInput.value, this.appliedSmoothingWindow));
         this.appliedSmoothingAlpha = this.clampSmoothingAlpha(this.parseNumber(this.smoothingAlphaInput.value, this.appliedSmoothingAlpha));
 
         this.phase5SmoothingSelect.value = this.appliedPhase5Smoothing;
-        this.smoothingWindowInput.value = this.appliedSmoothingWindow.toString();
         this.smoothingAlphaInput.value = this.appliedSmoothingAlpha.toFixed(2);
 
         this.resetSmoothingState();
@@ -914,7 +905,6 @@ class App {
             phase5Smoothing: this.getPhase5SmoothingMethod(),
             windowSamples: this.getWindowSamples(),
             iqRefGate: this.appliedIqReferenceMinAmplitude,
-            smoothingWindow: this.getSmoothingWindow(),
             smoothingAlpha: this.getSmoothingAlpha(),
             divisionEpsilon: this.getDivisionEpsilon(),
             divisionClip: this.getDivisionClip(),
@@ -1260,12 +1250,7 @@ class App {
             raw.phase4Calibration === 'scale_only'
             ? raw.phase4Calibration
             : 'tare_scale';
-        const phase5Smoothing = raw.phase5Smoothing === 'none' ||
-            raw.phase5Smoothing === 'moving_average' ||
-            raw.phase5Smoothing === 'rms_window' ||
-            raw.phase5Smoothing === 'true_rms_window'
-            ? raw.phase5Smoothing
-            : 'ema';
+        const phase5Smoothing = raw.phase5Smoothing === 'none' ? 'none' : 'ema';
         const plotDecimationMethod = raw.plotDecimationMethod === 'none' ||
             raw.plotDecimationMethod === 'minmax' ||
             raw.plotDecimationMethod === 'mean'
@@ -1313,7 +1298,6 @@ class App {
             phase5Smoothing,
             windowSamples: Math.max(1, Math.round(this.toFiniteNumber(raw.windowSamples, 8000))),
             iqRefGate: this.toFiniteNumber(raw.iqRefGate, this.iqReferenceMinAmplitudeDefault),
-            smoothingWindow: Math.max(1, Math.round(this.toFiniteNumber(raw.smoothingWindow, 5))),
             smoothingAlpha: this.toFiniteNumber(raw.smoothingAlpha, 0.1),
             divisionEpsilon: this.toFiniteNumber(raw.divisionEpsilon, 0.01),
             divisionClip: this.toFiniteNumber(raw.divisionClip, 100.0),
@@ -1591,7 +1575,6 @@ class App {
         this.liveIqQ0El.innerText = this.iqProjectionBaseQ.toFixed(4);
         this.updateCalibrationUiState();
 
-        this.smoothingWindowGroup.style.display = 'none';
         this.smoothingAlphaGroup.style.display = 'none';
         this.divisionEpsilonGroup.style.display = 'none';
         this.divisionClipGroup.style.display = 'none';
@@ -1619,18 +1602,6 @@ class App {
         if (smoothingMethod === 'none') {
             const smoothingFormula = 'Off';
             this.liveSmoothingFormulaEl.innerText = smoothingFormula;
-        } else if (smoothingMethod === 'moving_average') {
-            const smoothingFormula = 'y[n] = (1/M) * sum_{k=0..M-1}(x[n-k])';
-            this.liveSmoothingFormulaEl.innerText = smoothingFormula;
-            this.smoothingWindowGroup.style.display = 'block';
-        } else if (smoothingMethod === 'rms_window') {
-            const smoothingFormula = 'y[n] = sign(mu) * sqrt((1/M) * sum_{k=0..M-1}(x[n-k]^2)), mu=(1/M)sum(x)';
-            this.liveSmoothingFormulaEl.innerText = smoothingFormula;
-            this.smoothingWindowGroup.style.display = 'block';
-        } else if (smoothingMethod === 'true_rms_window') {
-            const smoothingFormula = 'y[n] = sign(mu) * true_rms(x), mu=(1/M)sum(x)';
-            this.liveSmoothingFormulaEl.innerText = smoothingFormula;
-            this.smoothingWindowGroup.style.display = 'block';
         } else {
             const smoothingFormula = 'y[n] = alpha * x[n] + (1 - alpha) * y[n-1]';
             this.liveSmoothingFormulaEl.innerText = smoothingFormula;
@@ -1993,80 +1964,6 @@ class App {
             return weightRaw;
         }
 
-        if (method === 'moving_average') {
-            const m = this.getSmoothingWindow();
-            this.smoothingHistory.push(weightRaw);
-            while (this.smoothingHistory.length > m) {
-                this.smoothingHistory.shift();
-            }
-
-            let sum = 0;
-            for (let i = 0; i < this.smoothingHistory.length; i++) {
-                sum += this.smoothingHistory[i];
-            }
-            const y = sum / this.smoothingHistory.length;
-            this.lastSmoothingEvaluationText =
-                'y = (1/' +
-                this.smoothingHistory.length.toString() +
-                ') * sum = ' +
-                y.toFixed(4);
-            return y;
-        }
-
-        if (method === 'rms_window') {
-            const m = this.getSmoothingWindow();
-            this.smoothingHistory.push(weightRaw);
-            while (this.smoothingHistory.length > m) {
-                this.smoothingHistory.shift();
-            }
-
-            let sumSq = 0;
-            let sum = 0;
-            for (let i = 0; i < this.smoothingHistory.length; i++) {
-                const v = this.smoothingHistory[i];
-                sumSq += v * v;
-                sum += v;
-            }
-            const count = Math.max(1, this.smoothingHistory.length);
-            const mu = sum / count;
-            const rms = Math.sqrt(sumSq / count);
-            const y = mu > 0 ? rms : (mu < 0 ? -rms : 0);
-            this.lastSmoothingEvaluationText =
-                'y = sign(mu=' +
-                mu.toFixed(4) +
-                ') * rms = ' +
-                y.toFixed(4);
-            return y;
-        }
-
-        if (method === 'true_rms_window') {
-            const m = this.getSmoothingWindow();
-            this.smoothingHistory.push(weightRaw);
-            while (this.smoothingHistory.length > m) {
-                this.smoothingHistory.shift();
-            }
-
-            const targetPerSide = Math.max(1, Math.floor(this.smoothingHistory.length / 2));
-            let sum = 0;
-            for (let i = 0; i < this.smoothingHistory.length; i++) {
-                sum += this.smoothingHistory[i];
-            }
-            const count = Math.max(1, this.smoothingHistory.length);
-            const mu = sum / count;
-            const trms = this.computeTrueRmsBalanced(this.smoothingHistory, targetPerSide);
-            const y = mu > 0 ? trms : (mu < 0 ? -trms : 0);
-            this.lastSmoothingEvaluationText =
-                'y = sign(mu=' +
-                mu.toFixed(4) +
-                ') * true_rms(M=' +
-                this.smoothingHistory.length.toString() +
-                ', N_side=' +
-                targetPerSide.toString() +
-                ') = ' +
-                y.toFixed(4);
-            return y;
-        }
-
         const alpha = this.getSmoothingAlpha();
         if (!this.emaInitialized) {
             this.emaWeight = weightRaw;
@@ -2091,7 +1988,6 @@ class App {
     }
 
     private resetSmoothingState(): void {
-        this.smoothingHistory = [];
         this.emaWeight = 0;
         this.emaInitialized = false;
         this.lastSmoothingEvaluationText = 'Off';
@@ -2258,10 +2154,6 @@ class App {
         return this.appliedWindowSamples;
     }
 
-    private getSmoothingWindow(): number {
-        return this.appliedSmoothingWindow;
-    }
-
     private getSmoothingAlpha(): number {
         return this.appliedSmoothingAlpha;
     }
@@ -2318,10 +2210,6 @@ class App {
 
     private clampIqReferenceMinAmplitude(amplitude: number): number {
         return Math.max(0.0, Math.min(5.0, amplitude));
-    }
-
-    private clampSmoothingWindow(samples: number): number {
-        return Math.max(1, Math.min(100, Math.round(samples)));
     }
 
     private clampSmoothingAlpha(alpha: number): number {
