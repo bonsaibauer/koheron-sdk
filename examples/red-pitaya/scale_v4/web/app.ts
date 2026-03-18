@@ -232,6 +232,17 @@ class App {
     private scaleTareFeatureKgEl: HTMLElement;
     private weightEl: HTMLElement;
     private weightUnitEl: HTMLElement;
+    private ledStepInput: HTMLInputElement;
+    private ledApplyBtn: HTMLButtonElement;
+    private liveLedWeightGramsEl: HTMLElement;
+    private liveLedActiveCountEl: HTMLElement;
+    private liveLedMaskEl: HTMLElement;
+    private ledIndicatorEls: HTMLElement[] = [];
+    private readonly ledCount = 8;
+    private readonly ledStepGramsDefault = 200;
+    private appliedLedStepGrams = this.ledStepGramsDefault;
+    private lastLedMaskSent = -1;
+    private ledReadbackInFlight = false;
 
     private tareBtn: HTMLButtonElement;
     private readonly expCalibrationA = 5.5777;
@@ -343,6 +354,7 @@ class App {
                 this.bindSignalSource(document);
                 this.bindDriverPanel(document);
                 this.bindWorkflowControls(document);
+                this.bindLedPanel(document);
                 this.bindScalePanel(document);
 
                 this.applyPhase1Settings();
@@ -350,6 +362,7 @@ class App {
                 this.applyPhase3Settings();
                 this.applyPhase4Settings();
                 this.applyPhase5Settings();
+                this.applyLedSettings();
                 this.updateFormulaAndParameterVisibility();
 
                 this.updateDiagnosticsPlot();
@@ -679,6 +692,95 @@ class App {
             this.appliedPhase2Input = this.lastManualPhase2Input;
         }
         this.phase2InputSelect.value = this.appliedPhase2Input;
+    }
+
+    // ----------------------------
+    // Module: LED Panel UI
+    // ----------------------------
+    private bindLedPanel(document: Document): void {
+        this.ledStepInput = <HTMLInputElement>document.getElementById('led-step-grams');
+        this.ledApplyBtn = <HTMLButtonElement>document.getElementById('btn-led-settings-save');
+        this.liveLedWeightGramsEl = <HTMLElement>document.getElementById('live-led-weight-grams');
+        this.liveLedActiveCountEl = <HTMLElement>document.getElementById('live-led-active-count');
+        this.liveLedMaskEl = <HTMLElement>document.getElementById('live-led-mask');
+
+        this.ledIndicatorEls = [];
+        for (let i = 1; i <= this.ledCount; i++) {
+            const led = <HTMLElement | null>document.getElementById('led-dot-' + i.toString());
+            if (led) {
+                this.ledIndicatorEls.push(led);
+            }
+        }
+
+        this.ledApplyBtn.addEventListener('click', () => this.applyLedSettings());
+        this.ledStepInput.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter') {
+                this.applyLedSettings();
+            }
+        });
+    }
+
+    private applyLedSettings(): void {
+        this.appliedLedStepGrams = this.clampLedStepGrams(
+            this.parseNumber(this.ledStepInput.value, this.appliedLedStepGrams)
+        );
+        this.ledStepInput.value = this.appliedLedStepGrams.toFixed(0);
+        this.updateLedDisplay(this.weightTraceValue);
+    }
+
+    private updateLedDisplay(weightKgFromUi: number): void {
+        const weightKg = Math.max(0, this.sanitizeFinite(weightKgFromUi));
+        const grams = 1000.0 * weightKg;
+        const activeLeds = Math.max(0, Math.min(this.ledCount, Math.floor(grams / this.appliedLedStepGrams)));
+        const mask = activeLeds > 0 ? (1 << activeLeds) - 1 : 0;
+
+        if (mask !== this.lastLedMaskSent) {
+            this.connector.setLeds(mask);
+            this.lastLedMaskSent = mask;
+        }
+
+        this.liveLedWeightGramsEl.innerText = grams.toFixed(1);
+        this.pollLedReadback();
+    }
+
+    private pollLedReadback(): void {
+        if (this.ledReadbackInFlight) {
+            return;
+        }
+
+        this.ledReadbackInFlight = true;
+        this.connector.getLeds((rawMask) => {
+            this.ledReadbackInFlight = false;
+            this.updateLedReadbackUi(rawMask);
+        });
+    }
+
+    private updateLedReadbackUi(rawMask: number): void {
+        const ledBitMask = (1 << this.ledCount) - 1;
+        const mask = (rawMask >>> 0) & ledBitMask;
+        const activeLeds = this.countSetBits(mask);
+
+        this.liveLedActiveCountEl.innerText = activeLeds.toString();
+        this.liveLedMaskEl.innerText = '0b' + mask.toString(2).padStart(this.ledCount, '0');
+
+        for (let i = 0; i < this.ledIndicatorEls.length; i++) {
+            const isOn = ((mask >>> i) & 0x1) !== 0;
+            if (isOn) {
+                this.ledIndicatorEls[i].classList.add('is-on');
+            } else {
+                this.ledIndicatorEls[i].classList.remove('is-on');
+            }
+        }
+    }
+
+    private countSetBits(value: number): number {
+        let v = value >>> 0;
+        let count = 0;
+        while (v !== 0) {
+            count += v & 0x1;
+            v >>>= 1;
+        }
+        return count;
     }
 
     // ----------------------------
@@ -1676,6 +1778,8 @@ class App {
                     this.lastActiveCalibrationOffset = activeOffset;
 
                     this.weightEl.innerText = result.weightUsed.toFixed(3);
+                    const displayedWeight = this.parseNumber(this.weightEl.innerText, result.weightUsed);
+                    this.updateLedDisplay(displayedWeight);
                     this.updateScaleTareIndicators();
 
                     this.liveInputEl.innerText = this.getPhase2InputLabel(this.getPhase2InputMode());
@@ -2334,6 +2438,10 @@ class App {
 
     private clampDivisionClip(clip: number): number {
         return Math.max(0.1, Math.min(1000000.0, clip));
+    }
+
+    private clampLedStepGrams(stepGrams: number): number {
+        return Math.max(1, Math.min(100000, Math.round(stepGrams)));
     }
 
     // ----------------------------

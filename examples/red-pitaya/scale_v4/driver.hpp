@@ -80,6 +80,14 @@ class AdcDacBram {
         update_dac_waveform();
     }
 
+    void set_leds(uint32_t led_value) {
+        ctl.write<reg::led>(led_value);
+    }
+
+    uint32_t get_leds() {
+        return ctl.read<reg::led>();
+    }
+
     void set_plot_decimation(uint32_t mode, uint32_t max_points) {
         decimation_mode = std::min(mode, uint32_t(3));
         const uint32_t max_supported = std::max(dac_size, adc_size);

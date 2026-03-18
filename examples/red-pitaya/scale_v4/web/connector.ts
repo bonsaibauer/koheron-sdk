@@ -36,6 +36,17 @@ class Connector {
         this.client.send(Command(this.driver.id, this.cmds['set_dac_amplitude'], amplitudeVpk));
     }
 
+    setLeds(mask: number): void {
+        this.client.send(Command(this.driver.id, this.cmds['set_leds'], mask >>> 0));
+    }
+
+    getLeds(callback: (mask: number) => void): void {
+        this.client.readUint32(
+            Command(this.driver.id, this.cmds['get_leds']),
+            (x: number) => callback(x)
+        );
+    }
+
     setPlotDecimation(mode: number, maxPoints: number): void {
         this.client.send(Command(this.driver.id, this.cmds['set_plot_decimation'], mode, maxPoints));
     }
